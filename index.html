@@ -364,7 +364,7 @@ function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
-function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings}){
+function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr}){
   const [nm,setNm]=useState("");const [filter,setFilter]=useState("all");
   const sorted=sortHouses(houses);
   const filtered=sorted.filter(h=>filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
@@ -375,7 +375,7 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings}){
       <div style={{background:`linear-gradient(180deg, ${T.card} 0%, ${T.cardAlt} 100%)`,borderBottom:`1px solid ${T.border}`,padding:"17px 16px 14px",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(15,23,42,.04)"}}>
         <div style={{maxWidth:960,margin:"0 auto"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:14}}>
-            <div><div style={{fontSize:11,color:T.primary,textTransform:"uppercase",letterSpacing:2,marginBottom:4,fontFamily:"'DM Mono',monospace",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>{settings.project||"PROJECT"}<span style={{color:cloudReady?T.success:T.text3,fontSize:10}}>{cloudReady?"☁ synced":"📱 local"}</span></div><h1 style={{margin:0,fontSize:24,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,lineHeight:1.1}}>Kitchen Install Tracker</h1></div>
+            <div><div style={{fontSize:11,color:T.primary,textTransform:"uppercase",letterSpacing:2,marginBottom:4,fontFamily:"'DM Mono',monospace",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>{settings.project||"PROJECT"}<span style={{color:syncErr?T.danger:cloudReady?T.success:T.text3,fontSize:10}}>{syncErr?"⚠ sync error":cloudReady?"☁ synced":"📱 local"}</span></div><h1 style={{margin:0,fontSize:24,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,lineHeight:1.1}}>Kitchen Install Tracker</h1></div>
             <div style={{display:"flex",gap:18,alignItems:"center"}}>{[["Houses",houses.length,T.primary],["Done",tDone,T.success],["Snags",tOpen,tOpen>0?T.danger:T.success]].map(([l,v,c])=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div><div style={{fontSize:10,color:T.text2,textTransform:"uppercase",marginTop:3,fontWeight:600,letterSpacing:.5}}>{l}</div></div>))}<button onClick={onSettings} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:22,minHeight:44,minWidth:36,padding:4}}>⚙</button></div>
           </div>
           <div style={{display:"flex",gap:8}}><input value={nm} onChange={e=>setNm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add house / plot number…" style={{flex:1,background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:10,padding:"11px 14px",fontSize:14,outline:"none",minHeight:46}}/><Btn v="primary" onClick={add}>+ Add</Btn></div>
@@ -396,32 +396,44 @@ function App(){
   const [settings,setSettings]=useState(()=>loadS());
   const [selId,setSelId]=useState(null);
   const [showSet,setShowSet]=useState(false);
+  const [syncErr,setSyncErr]=useState(false);
+  const pending=useRef({});      // id -> latest house object awaiting cloud write
+  const timers=useRef({});       // id -> debounce timer
+  const lastWriteAt=useRef(0);   // recent local write => block reloads from clobbering it
 
-  // Cloud: initial fetch + realtime + refetch-on-focus
+  const flushHouse=id=>{const u=pending.current[id];if(!u||!(cloudReady&&sb))return;delete pending.current[id];lastWriteAt.current=Date.now();sb.from('houses').upsert({id:u.id,data:u}).then(r=>{lastWriteAt.current=Date.now();if(r&&r.error){setSyncErr(true);console.error("write:",r.error);}else setSyncErr(false);},e=>{setSyncErr(true);console.error(e);});};
+  const flushAll=()=>{Object.keys(pending.current).forEach(flushHouse);};
+  const pushHouse=u=>{if(!(cloudReady&&sb))return;pending.current[u.id]=u;lastWriteAt.current=Date.now();clearTimeout(timers.current[u.id]);timers.current[u.id]=setTimeout(()=>flushHouse(u.id),600);};
+
+  // Cloud: initial fetch + realtime + refetch on focus (guarded so it never overwrites fresh local edits)
   useEffect(()=>{
     if(!cloudReady||!sb)return;let active=true;
     const reload=async()=>{
-      try{const {data}=await sb.from('houses').select('data');if(active&&data){const hs=data.map(r=>r.data);setHouses(hs);LS.set("tk4-h",JSON.stringify(hs));}}catch(e){console.error("houses fetch:",e);}
+      if(Date.now()-lastWriteAt.current<2500)return;        // just edited locally — keep ours
+      if(Object.keys(pending.current).length)return;        // writes still queued
+      try{const {data,error}=await sb.from('houses').select('data');if(error){setSyncErr(true);return;}if(active&&data){const hs=data.map(r=>r.data);setHouses(hs);LS.set("tk4-h",JSON.stringify(hs));setSyncErr(false);}}catch(e){console.error("houses fetch:",e);}
       try{const {data}=await sb.from('meta').select('value').eq('key','settings').maybeSingle();if(active&&data&&data.value){setSettings(data.value);LS.set("tk4-s",JSON.stringify(data.value));}}catch(e){}
     };
     reload();
     const ch=sb.channel('rt').on('postgres_changes',{event:'*',schema:'public',table:'houses'},reload).on('postgres_changes',{event:'*',schema:'public',table:'meta'},reload).subscribe();
-    const onFocus=()=>reload();window.addEventListener('focus',onFocus);
-    return()=>{active=false;try{sb.removeChannel(ch);}catch(e){}window.removeEventListener('focus',onFocus);};
+    const onFocus=()=>reload();
+    const onVis=()=>{if(document.visibilityState==='hidden')flushAll();else reload();};
+    window.addEventListener('focus',onFocus);document.addEventListener('visibilitychange',onVis);window.addEventListener('beforeunload',flushAll);
+    return()=>{active=false;try{sb.removeChannel(ch);}catch(e){}window.removeEventListener('focus',onFocus);document.removeEventListener('visibilitychange',onVis);window.removeEventListener('beforeunload',flushAll);};
   },[]);
 
   useEffect(()=>{LS.set("tk4-h",JSON.stringify(houses));},[houses]);
   useEffect(()=>{LS.set("tk4-s",JSON.stringify(settings));},[settings]);
 
   const sel=selId?houses.find(h=>h.id===selId)||null:null;
-  const addH=useCallback(name=>{const h=DH(name);setHouses(hs=>[...hs,h]);if(cloudReady&&sb)sb.from('houses').upsert({id:h.id,data:h}).then(()=>{},e=>console.error(e));},[]);
-  const delH=useCallback(id=>{setHouses(hs=>hs.filter(h=>h.id!==id));setSelId(s=>s===id?null:s);if(cloudReady&&sb)sb.from('houses').delete().eq('id',id).then(()=>{},e=>console.error(e));},[]);
-  const updH=useCallback(u=>{setHouses(hs=>hs.map(h=>h.id===u.id?u:h));if(cloudReady&&sb)sb.from('houses').upsert({id:u.id,data:u}).then(()=>{},e=>console.error(e));},[]);
+  const addH=useCallback(name=>{const h=DH(name);setHouses(hs=>[...hs,h]);if(cloudReady&&sb){lastWriteAt.current=Date.now();sb.from('houses').upsert({id:h.id,data:h}).then(r=>{lastWriteAt.current=Date.now();if(r&&r.error){setSyncErr(true);console.error(r.error);}},e=>{setSyncErr(true);console.error(e);});}},[]);
+  const delH=useCallback(id=>{setHouses(hs=>hs.filter(h=>h.id!==id));setSelId(s=>s===id?null:s);delete pending.current[id];if(cloudReady&&sb){lastWriteAt.current=Date.now();sb.from('houses').delete().eq('id',id).then(r=>{lastWriteAt.current=Date.now();if(r&&r.error){setSyncErr(true);console.error(r.error);}},e=>{setSyncErr(true);console.error(e);});}},[]);
+  const updH=useCallback(u=>{setHouses(hs=>hs.map(h=>h.id===u.id?u:h));pushHouse(u);},[]);
   const saveSettings=useCallback(s=>{setSettings(s);if(cloudReady&&sb)sb.from('meta').upsert({key:'settings',value:s}).then(()=>{},e=>console.error(e));},[]);
   const handleImport=useCallback(file=>importBackup(file,setHouses,setSettings),[]);
   return(
     <>
-      {sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>:<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} settings={settings} onSettings={()=>setShowSet(true)}/>}
+      {sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>:<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} settings={settings} onSettings={()=>setShowSet(true)} syncErr={syncErr}/>}
       {showSet&&<SettingsModal settings={settings} houses={houses} onSaveSettings={saveSettings} onImport={handleImport} onClose={()=>setShowSet(false)}/>}
     </>
   );
