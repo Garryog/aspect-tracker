@@ -82,6 +82,7 @@ const pct=h=>{const t=ROOMS.length*(STAGES.length-1);return Math.round(ROOMS.red
 const totalOpen=h=>ROOMS.reduce((n,r)=>n+h.rooms[r].snags.filter(s=>!s.resolved).length,0);
 const rOpen=r=>r.snags.filter(s=>!s.resolved).length;
 const pColor=p=>p===100?T.success:p>60?T.primary:p>20?"#f59e0b":T.text3;
+const sortHouses=hs=>[...hs].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'}));
 
 // ── Storage ────────────────────────────────────────────────────────────────────
 const LS={
@@ -109,13 +110,14 @@ const delP=k=>k&&LS.del(k);
 
 // ── JSON Backup / Restore ──────────────────────────────────────────────────────
 const exportBackup=(houses,settings)=>{
+  const sortedHouses=sortHouses(houses);
   const photos={};
-  houses.forEach(h=>ROOMS.forEach(r=>{
+  sortedHouses.forEach(h=>ROOMS.forEach(r=>{
     const rm=h.rooms[r];
     if(rm.finishPhotoKey){const p=getP(rm.finishPhotoKey);if(p)photos[rm.finishPhotoKey]=p;}
     rm.snags.forEach(s=>{if(s.photoKey){const p=getP(s.photoKey);if(p)photos[s.photoKey]=p;}});
   }));
-  const data={version:1,exportedAt:new Date().toISOString(),settings,houses,photos};
+  const data={version:1,exportedAt:new Date().toISOString(),settings,houses:sortedHouses,photos};
   const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -173,18 +175,18 @@ const exportSnags=(houses,project)=>{
 };
 
 const exportStatus=houses=>{
-  const rows=[["House","Kitchen Stage","Kitchen Snags","Wardrobe Stage","Wardrobe Snags","Utility Stage","Utility Snags","Overall %","Kitchen Inspected","Wardrobe Inspected","Utility Inspected","Notes"]];
+  const rows=[["House","Kitchen Stage","Kitchen Snags","Kitchen Notes","Wardrobe Stage","Wardrobe Snags","Wardrobe Notes","Utility Stage","Utility Snags","Utility Notes","Overall %","Kitchen Inspected","Wardrobe Inspected","Utility Inspected"]];
   houses.forEach(h=>rows.push([h.name,
-    h.rooms.Kitchen.installStage,rOpen(h.rooms.Kitchen),
-    h.rooms.Wardrobe.installStage,rOpen(h.rooms.Wardrobe),
-    h.rooms.Utility.installStage,rOpen(h.rooms.Utility),
+    h.rooms.Kitchen.installStage,rOpen(h.rooms.Kitchen),h.rooms.Kitchen.notes||"",
+    h.rooms.Wardrobe.installStage,rOpen(h.rooms.Wardrobe),h.rooms.Wardrobe.notes||"",
+    h.rooms.Utility.installStage,rOpen(h.rooms.Utility),h.rooms.Utility.notes||"",
     pct(h)+"%",
     fmtShort(h.rooms.Kitchen.lastInspection),
     fmtShort(h.rooms.Wardrobe.lastInspection),
-    fmtShort(h.rooms.Utility.lastInspection),
-    [h.rooms.Kitchen.notes,h.rooms.Wardrobe.notes,h.rooms.Utility.notes].filter(Boolean).join(" | ")
+    fmtShort(h.rooms.Utility.lastInspection)
   ]));
-  const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=rows[0].map(()=>({wch:22}));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=rows[0].map(hd=>({wch:hd.includes("Notes")?42:hd.includes("Inspected")?20:18}));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Status Report");
   XLSX.writeFile(wb,`Status_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
@@ -196,14 +198,12 @@ const exportPDF=async(houses,project)=>{
   const pageW=210,pageH=297,M=15;
   let y=M;
 
-  // Title
   doc.setFontSize(20).setFont(undefined,'bold');
   doc.text('Open Snags Report',M,y);y+=8;
   doc.setFontSize(11).setFont(undefined,'normal').setTextColor(100,100,100);
   doc.text(`Project: ${project||"Athenry"}`,M,y);y+=5;
   doc.text(`Generated: ${new Date().toLocaleString('en-IE')}`,M,y);y+=8;
 
-  // Count
   let totalOpen=0;
   houses.forEach(h=>ROOMS.forEach(r=>totalOpen+=h.rooms[r].snags.filter(s=>!s.resolved).length));
   if(totalOpen===0){alert("No open snags to export.");return;}
@@ -219,7 +219,6 @@ const exportPDF=async(houses,project)=>{
     if(hsnags.length===0)continue;
 
     ensureSpace(15);
-    // House header
     doc.setFillColor(241,245,249);
     doc.rect(M,y-5,pageW-2*M,9,'F');
     doc.setFontSize(13).setFont(undefined,'bold').setTextColor(15,23,42);
@@ -236,9 +235,8 @@ const exportPDF=async(houses,project)=>{
       const startY=y;
       const stype=SNAG_TYPES.find(t=>t.code===s.type);
 
-      // Type badge area
       doc.setFontSize(10).setFont(undefined,'bold');
-      const tc=TC[s.type]||[100,100,100];
+      const tc=TC[s.type]||"#646464";
       const hex=tc.replace('#','');const r=parseInt(hex.slice(0,2),16);const g=parseInt(hex.slice(2,4),16);const b=parseInt(hex.slice(4,6),16);
       doc.setTextColor(r,g,b);
       doc.text(`${s.room} • ${stype?.label||s.type}`,M+2,y);
@@ -246,7 +244,6 @@ const exportPDF=async(houses,project)=>{
       doc.text(`Logged: ${new Date(s.loggedAt).toLocaleString('en-IE')}`,pageW-M-2,y,{align:'right'});
       y+=5;
 
-      // Details
       doc.setFontSize(10).setTextColor(40,40,40);
       const lines=[];
       if(s.material)lines.push(`Material: ${s.material}`);
@@ -269,7 +266,6 @@ const exportPDF=async(houses,project)=>{
         });
       });
 
-      // Photo
       if(photo){
         try{
           const imgW=68,imgH=51;
@@ -278,7 +274,6 @@ const exportPDF=async(houses,project)=>{
         }catch(e){console.error("PDF image error:",e);}
       }
 
-      // Divider
       doc.setDrawColor(230,230,230);
       doc.line(M,y+1,pageW-M,y+1);
       y+=6;
@@ -286,7 +281,6 @@ const exportPDF=async(houses,project)=>{
     y+=3;
   }
 
-  // Footer with page numbers
   const total=doc.getNumberOfPages();
   for(let i=1;i<=total;i++){
     doc.setPage(i);
@@ -320,61 +314,63 @@ const L=({c})=><div style={{fontSize:11,color:T.text2,textTransform:"uppercase",
 const II={background:T.cardAlt,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:9,
   padding:"10px 12px",fontSize:14,width:"100%",outline:"none",boxSizing:"border-box",minHeight:44,transition:"border .15s, box-shadow .15s"};
 
-// ── Add Snag Form ──────────────────────────────────────────────────────────────
-function AddSnagForm({onAdd,onCancel}){
-  const [f,sf]=useState({type:"SNAG_BSAW",material:MATS[0],height:"",width:"",description:"",correctHouse:"",quantity:"",unit:"sheets",photoDataUrl:null});
+// ── Snag Form (add or edit) ────────────────────────────────────────────────────
+function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 Log New Snag"}){
+  const [f,sf]=useState(()=>initial||{type:"SNAG_BSAW",material:MATS[0],height:"",width:"",description:"",correctHouse:"",quantity:"",unit:"sheets",photoDataUrl:null});
+  const [photoChanged,setPhotoChanged]=useState(false);
   const ref=useRef();
   const sel=SNAG_TYPES.find(t=>t.code===f.type);
   const set=p=>sf(x=>({...x,...p}));
-  const onFile=e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>set({photoDataUrl:ev.target.result});r.readAsDataURL(file);e.target.value="";};
+  const onFile=e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>{set({photoDataUrl:ev.target.result});setPhotoChanged(true);};r.readAsDataURL(file);e.target.value="";};
+  const removePhoto=()=>{set({photoDataUrl:null});setPhotoChanged(true);};
 
   return(
     <div style={{background:T.cardAlt,border:`1px solid ${T.borderStrong}`,borderRadius:12,padding:16,marginBottom:12}}>
-      <div style={{fontWeight:700,fontSize:15,color:T.text,marginBottom:14}}>📋 Log New Snag</div>
+      <div style={{fontWeight:700,fontSize:15,color:T.text,marginBottom:14}}>{title}</div>
 
       <div style={{marginBottom:12}}><L c="Issue Type"/>
-        <select value={f.type} onChange={e=>set({type:e.target.value,material:MATS[0],height:"",width:"",correctHouse:"",quantity:"",unit:"sheets"})} style={{...II,background:"#fff"}}>
+        <select value={f.type} onChange={e=>set({type:e.target.value})} style={{...II,background:"#fff"}}>
           {SNAG_TYPES.map(t=><option key={t.code} value={t.code}>{t.label}</option>)}
         </select>
       </div>
 
       {sel?.panel&&<>
         <div style={{marginBottom:12}}><L c="Material / Board Type"/>
-          <select value={f.material} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>
+          <select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>
             {MATS.map(m=><option key={m}>{m}</option>)}
           </select>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-          <div><L c="Height (mm)"/><input type="number" inputMode="numeric" placeholder="720" value={f.height} onChange={e=>set({height:e.target.value})} style={{...II,background:"#fff"}}/></div>
-          <div><L c="Width (mm)"/><input type="number" inputMode="numeric" placeholder="600" value={f.width} onChange={e=>set({width:e.target.value})} style={{...II,background:"#fff"}}/></div>
+          <div><L c="Height (mm)"/><input type="number" inputMode="numeric" placeholder="720" value={f.height||""} onChange={e=>set({height:e.target.value})} style={{...II,background:"#fff"}}/></div>
+          <div><L c="Width (mm)"/><input type="number" inputMode="numeric" placeholder="600" value={f.width||""} onChange={e=>set({width:e.target.value})} style={{...II,background:"#fff"}}/></div>
         </div>
       </>}
 
       {sel?.excess&&<>
         <div style={{marginBottom:12}}><L c="Material"/>
-          <select value={f.material} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>
+          <select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>
             {MATS.map(m=><option key={m}>{m}</option>)}
           </select>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:12}}>
-          <div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div>
-          <div><L c="Unit"/><select value={f.unit} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div>
+          <div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity||""} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div>
+          <div><L c="Unit"/><select value={f.unit||"sheets"} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div>
         </div>
       </>}
 
       {f.type==="WRONG_HOUSE"&&<div style={{marginBottom:12}}><L c="Correct House / Plot"/>
-        <input placeholder="e.g. Plot 4" value={f.correctHouse} onChange={e=>set({correctHouse:e.target.value})} style={{...II,background:"#fff"}}/>
+        <input placeholder="e.g. Plot 4" value={f.correctHouse||""} onChange={e=>set({correctHouse:e.target.value})} style={{...II,background:"#fff"}}/>
       </div>}
 
       <div style={{marginBottom:12}}><L c="Details / Description"/>
-        <textarea placeholder="Describe the issue…" rows={2} value={f.description} onChange={e=>set({description:e.target.value})} style={{...II,background:"#fff",resize:"vertical"}}/>
+        <textarea placeholder="Describe the issue…" rows={2} value={f.description||""} onChange={e=>set({description:e.target.value})} style={{...II,background:"#fff",resize:"vertical"}}/>
       </div>
 
       <div style={{marginBottom:16}}><L c="Photo"/>
         {f.photoDataUrl?(
           <div style={{position:"relative",display:"inline-block"}}>
             <img src={f.photoDataUrl} style={{maxWidth:180,maxHeight:130,borderRadius:9,border:`1px solid ${T.borderStrong}`,display:"block"}}/>
-            <button onClick={()=>set({photoDataUrl:null})} style={{position:"absolute",top:5,right:5,background:"#000c",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",padding:"3px 9px",fontSize:14}}>×</button>
+            <button onClick={removePhoto} style={{position:"absolute",top:5,right:5,background:"#000c",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",padding:"3px 9px",fontSize:14}}>×</button>
           </div>
         ):(
           <><input ref={ref} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
@@ -383,7 +379,7 @@ function AddSnagForm({onAdd,onCancel}){
       </div>
 
       <div style={{display:"flex",gap:8}}>
-        <Btn v="primary" onClick={()=>onAdd(f)}>Log Snag</Btn>
+        <Btn v="primary" onClick={()=>onSubmit({...f,_photoChanged:photoChanged})}>{submitLabel}</Btn>
         <Btn v="ghost" sm onClick={onCancel}>Cancel</Btn>
       </div>
     </div>
@@ -391,7 +387,7 @@ function AddSnagForm({onAdd,onCancel}){
 }
 
 // ── Snag Item ──────────────────────────────────────────────────────────────────
-function SnagItem({snag,onToggle,onDelete}){
+function SnagItem({snag,onToggle,onDelete,onEdit}){
   const [photo,setPhoto]=useState(null);
   const [exp,setExp]=useState(false);
   const t=SNAG_TYPES.find(x=>x.code===snag.type);
@@ -419,7 +415,6 @@ function SnagItem({snag,onToggle,onDelete}){
         </div>
         {snag.photoKey&&<span style={{flexShrink:0,fontSize:14}}>📷</span>}
         <span style={{color:T.text3,fontSize:11,flexShrink:0}}>{exp?"▲":"▼"}</span>
-        <button onClick={e=>{e.stopPropagation();if(confirm("Delete this snag?"))onDelete();}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:20,minWidth:32,minHeight:44,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>×</button>
       </div>
       {exp&&(
         <div style={{padding:"10px 14px 14px",borderTop:`1px solid ${T.border}`,background:T.cardAlt}}>
@@ -432,7 +427,7 @@ function SnagItem({snag,onToggle,onDelete}){
           {snag.correctHouse&&<div style={{fontSize:13,color:"#ec4899",marginBottom:4,fontWeight:600}}>→ Correct house: {snag.correctHouse}</div>}
           {snag.description&&<div style={{fontSize:14,color:T.text,marginBottom:8,lineHeight:1.55}}>{snag.description}</div>}
           {snag.photoKey&&(
-            <div style={{marginTop:8}}>
+            <div style={{marginTop:8,marginBottom:10}}>
               {photo?(
                 <div style={{position:"relative",display:"inline-block"}}>
                   <img src={photo} style={{maxWidth:"100%",maxHeight:280,borderRadius:10,border:`1px solid ${T.borderStrong}`,display:"block"}}/>
@@ -441,6 +436,10 @@ function SnagItem({snag,onToggle,onDelete}){
               ):<Btn sm onClick={loadPh}>Load Photo</Btn>}
             </div>
           )}
+          <div style={{display:"flex",gap:8,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
+            <Btn sm v="primary" onClick={onEdit}>✏️ Edit</Btn>
+            <Btn sm v="danger" onClick={()=>{if(confirm("Delete this snag?"))onDelete();}}>🗑 Delete</Btn>
+          </div>
         </div>
       )}
     </div>
@@ -448,8 +447,11 @@ function SnagItem({snag,onToggle,onDelete}){
 }
 
 // ── Room Panel ─────────────────────────────────────────────────────────────────
+const Card=({children,extraSx})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 1px 3px rgba(15,23,42,.04)",...extraSx}}>{children}</div>;
+
 function RoomPanel({houseId,room,rd,onUpdate}){
   const [showAdd,setShowAdd]=useState(false);
+  const [editing,setEditing]=useState(null); // { snagId, initial }
   const finRef=useRef();
   const [finPh,setFinPh]=useState(()=>rd.finishPhotoKey?getP(rd.finishPhotoKey):null);
 
@@ -457,12 +459,54 @@ function RoomPanel({houseId,room,rd,onUpdate}){
   const setStage=s=>upd({...rd,installStage:s,lastInspection:new Date().toISOString()});
   const stampNow=()=>upd({...rd,lastInspection:new Date().toISOString()});
 
-  const addSnag=async fd=>{
+  const submitNew=async fd=>{
     let pk=null;
     if(fd.photoDataUrl){pk=`ph:${uid()}`;await saveP(pk,fd.photoDataUrl);}
-    const {photoDataUrl,...rest}=fd;
+    const {photoDataUrl,_photoChanged,...rest}=fd;
     upd({...rd,lastInspection:new Date().toISOString(),snags:[...rd.snags,{...rest,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKey:pk}]});
     setShowAdd(false);
+  };
+
+  const startEdit=snag=>{
+    let dataUrl=null;
+    if(snag.photoKey)dataUrl=getP(snag.photoKey);
+    setEditing({
+      snagId:snag.id,
+      initial:{
+        type:snag.type,
+        material:snag.material||MATS[0],
+        height:snag.height||"",
+        width:snag.width||"",
+        description:snag.description||"",
+        correctHouse:snag.correctHouse||"",
+        quantity:snag.quantity||"",
+        unit:snag.unit||"sheets",
+        photoDataUrl:dataUrl
+      }
+    });
+    setShowAdd(false);
+  };
+
+  const submitEdit=async fd=>{
+    const old=rd.snags.find(s=>s.id===editing.snagId);
+    if(!old){setEditing(null);return;}
+    let pk=old.photoKey;
+    if(fd._photoChanged){
+      if(old.photoKey)delP(old.photoKey);
+      if(fd.photoDataUrl){
+        pk=`ph:${uid()}`;
+        await saveP(pk,fd.photoDataUrl);
+      } else {
+        pk=null;
+      }
+    }
+    const {photoDataUrl,_photoChanged,...rest}=fd;
+    upd({
+      ...rd,
+      lastInspection:new Date().toISOString(),
+      snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,photoKey:pk,editedAt:new Date().toISOString()}:s)
+    });
+    setEditing(null);
   };
 
   const tog=id=>upd({...rd,snags:rd.snags.map(s=>s.id===id?{...s,resolved:!s.resolved,resolvedAt:!s.resolved?new Date().toISOString():null}:s)});
@@ -477,7 +521,10 @@ function RoomPanel({houseId,room,rd,onUpdate}){
   };
 
   const open=rOpen(rd);
-  const Card=({children,extraSx})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 1px 3px rgba(15,23,42,.04)",...extraSx}}>{children}</div>;
+
+  const renderSnag=s=>editing?.snagId===s.id
+    ? <SnagForm key={s.id} initial={editing.initial} onSubmit={submitEdit} onCancel={()=>setEditing(null)} submitLabel="Save Changes" title="✏️ Edit Snag"/>
+    : <SnagItem key={s.id} snag={s} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)} onEdit={()=>startEdit(s)}/>;
 
   return(
     <div>
@@ -531,19 +578,19 @@ function RoomPanel({houseId,room,rd,onUpdate}){
             {open>0&&<span style={{background:T.danger+"15",color:T.danger,border:`1px solid ${T.danger}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{open} open</span>}
             {rd.snags.filter(s=>s.resolved).length>0&&<span style={{background:T.success+"15",color:T.success,border:`1px solid ${T.success}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{rd.snags.filter(s=>s.resolved).length} done</span>}
           </div>
-          <Btn sm v={showAdd?"ghost":"primary"} onClick={()=>setShowAdd(v=>!v)}>{showAdd?"✕ Cancel":"+ Log Snag"}</Btn>
+          <Btn sm v={showAdd?"ghost":"primary"} onClick={()=>{setShowAdd(v=>!v);setEditing(null);}}>{showAdd?"✕ Cancel":"+ Log Snag"}</Btn>
         </div>
-        <div style={{padding:showAdd||rd.snags.length>0?"12px":"14px 16px"}}>
-          {showAdd&&<AddSnagForm onAdd={addSnag} onCancel={()=>setShowAdd(false)}/>}
+        <div style={{padding:showAdd||editing||rd.snags.length>0?"12px":"14px 16px"}}>
+          {showAdd&&<SnagForm onSubmit={submitNew} onCancel={()=>setShowAdd(false)}/>}
           {rd.snags.length===0&&!showAdd&&<div style={{color:T.text3,fontSize:13,fontStyle:"italic"}}>No snags logged for this room</div>}
-          {rd.snags.filter(s=>!s.resolved).map(s=><SnagItem key={s.id} snag={s} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)}/>)}
+          {rd.snags.filter(s=>!s.resolved).map(renderSnag)}
           {rd.snags.filter(s=>s.resolved).length>0&&(
             <details style={{marginTop:4}}>
               <summary style={{fontSize:12,color:T.text2,padding:"7px 0",userSelect:"none",fontWeight:500}}>
                 Show resolved ({rd.snags.filter(s=>s.resolved).length}) ▾
               </summary>
               <div style={{marginTop:6}}>
-                {rd.snags.filter(s=>s.resolved).map(s=><SnagItem key={s.id} snag={s} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)}/>)}
+                {rd.snags.filter(s=>s.resolved).map(renderSnag)}
               </div>
             </details>
           )}
@@ -684,7 +731,8 @@ function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
 function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings}){
   const [nm,setNm]=useState("");
   const [filter,setFilter]=useState("all");
-  const filtered=houses.filter(h=>
+  const sorted=sortHouses(houses);
+  const filtered=sorted.filter(h=>
     filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
   const add=()=>{if(nm.trim()){onAdd(nm.trim());setNm("");}};
   const tOpen=houses.reduce((n,h)=>n+totalOpen(h),0);
@@ -728,9 +776,9 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings}){
           ))}
         </div>
         <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}>
-          <Btn sm onClick={()=>exportStatus(houses)}>📊 Status Excel</Btn>
-          <Btn sm v="danger" onClick={()=>exportSnags(houses,settings.project)}>⚠ Snags Excel</Btn>
-          <Btn sm v="primary" onClick={()=>exportPDF(houses,settings.project)}>📄 Snags PDF</Btn>
+          <Btn sm onClick={()=>exportStatus(sorted)}>📊 Status Excel</Btn>
+          <Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn>
+          <Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn>
         </div>
 
         {filtered.length===0?(
