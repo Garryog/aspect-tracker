@@ -14,34 +14,25 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#f1f5f9;font-family:'DM Sans',sans-serif;color:#0f172a;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
 input,select,textarea,button{font-family:inherit;color:inherit}
 input:focus,select:focus,textarea:focus{border-color:#3b82f6 !important;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#e2e8f0}::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:3px}
-details>summary{list-style:none;cursor:pointer}
-details>summary::-webkit-details-marker{display:none}
+details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}
 .hcard{transition:all .2s ease;box-shadow:0 1px 3px rgba(15,23,42,.06)}
 @media(hover:hover){.hcard:hover{box-shadow:0 8px 24px rgba(15,23,42,.12);transform:translateY(-2px);border-color:#cbd5e1 !important}}
-.btn{transition:all .15s}
-.btn:active{transform:scale(.97)}
+.btn{transition:all .15s}.btn:active{transform:scale(.97)}
 </style>
 </head>
 <body>
 <div id="root" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:14px;color:#64748b">
-  <div style="font-size:40px">🏗</div>
-  <div style="font-size:14px;font-family:sans-serif">Loading tracker…</div>
+  <div style="font-size:40px">🏗</div><div style="font-size:14px;font-family:sans-serif">Loading tracker…</div>
 </div>
 <script>
-(function(){
-  var m={name:"Kitchen Install Tracker",short_name:"Install Tracker",start_url:"./",display:"standalone",
-    background_color:"#f1f5f9",theme_color:"#3b82f6",
-    icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%233b82f6'/%3E%3Ctext y='.9em' font-size='80' x='10'%3E%F0%9F%8F%97%3C/text%3E%3C/svg%3E",sizes:"any",type:"image/svg+xml"}]};
-  var b=new Blob([JSON.stringify(m)],{type:'application/manifest+json'});
-  var l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(b);
-  document.head.appendChild(l);
-})();
+(function(){var m={name:"Kitchen Install Tracker",short_name:"Install Tracker",start_url:"./",display:"standalone",background_color:"#f1f5f9",theme_color:"#3b82f6",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%233b82f6'/%3E%3Ctext y='.9em' font-size='80' x='10'%3E%F0%9F%8F%97%3C/text%3E%3C/svg%3E",sizes:"any",type:"image/svg+xml"}]};var b=new Blob([JSON.stringify(m)],{type:'application/manifest+json'});var l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(b);document.head.appendChild(l);})();
 </script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useCallback,useRef}=React;
@@ -49,33 +40,19 @@ const {useState,useEffect,useCallback,useRef}=React;
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STAGES=["Not Started","Site Ready","Delivered","Installed","Installed with Snags","Finished"];
 const ROOMS=["Kitchen","Wardrobe","Utility"];
-const SNAG_TYPES=[
-  {code:"SNAG_BSAW",  label:"Band Saw Issue",           panel:true,  excess:false},
-  {code:"SNAG_CNC",   label:"CNC Issue",                panel:true,  excess:false},
-  {code:"SNAG_COMP",  label:"Component Issue",          panel:false, excess:false},
-  {code:"MISSING",    label:"Missing from Delivery",    panel:false, excess:false},
-  {code:"WRONG_HOUSE",label:"Wrong House Delivery",     panel:false, excess:false},
-  {code:"EXCESS_MAT", label:"Excess Material Delivered",panel:false, excess:true},
-];
+const SNAG_TYPES=[{code:"SNAG_BSAW",label:"Band Saw Issue",panel:true,excess:false},{code:"SNAG_CNC",label:"CNC Issue",panel:true,excess:false},{code:"SNAG_COMP",label:"Component Issue",panel:false,excess:false},{code:"MISSING",label:"Missing from Delivery",panel:false,excess:false},{code:"WRONG_HOUSE",label:"Wrong House Delivery",panel:false,excess:false},{code:"EXCESS_MAT",label:"Excess Material Delivered",panel:false,excess:true}];
 const MATS=["Bardolino L1LE","Bardolino L4E","Taupe Grey PM MFC L1LE","Taupe Grey PM MFC L4E","Cashmere PM MFC L1LE","Cashmere PM MFC L4E","MDF Raw"];
 const UNITS=["sheets","pieces","packs","boards","doors","panels","other"];
 const SC={"Not Started":"#94a3b8","Site Ready":"#10b981","Delivered":"#06b6d4","Installed":"#3b82f6","Installed with Snags":"#f59e0b","Finished":"#16a34a"};
 const TC={SNAG_BSAW:"#f59e0b",SNAG_CNC:"#8b5cf6",SNAG_COMP:"#3b82f6",MISSING:"#ef4444",WRONG_HOUSE:"#ec4899",EXCESS_MAT:"#f97316"};
-const XLSX_HEADERS=["Qty","Plot","Hs.  Num.","Product","Name","Description","Price",
-  "CHILDREN 1 QTY","CHILDREN 1 PRODUCT","CHILDREN 1 NAME","CHILDREN 1 DESCRIPTION","CHILDREN 1 PRICE",
-  "CHILDREN 2 QTY","CHILDREN 2 PRODUCT","CHILDREN 2 NAME","CHILDREN 2 DESCRIPTION","CHILDREN 2 PRICE",
-  "CHILDREN 3 QTY","CHILDREN 3 PRODUCT","CHILDREN 3 NAME","CHILDREN 3 DESCRIPTION","CHILDREN 3 PRICE",
-  "CHILDREN 4 QTY","CHILDREN 4 PRODUCT","CHILDREN 4 NAME","CHILDREN 4 DESCRIPTION","CHILDREN 4 PRICE"];
-
-const T={bg:"#f1f5f9",card:"#ffffff",cardAlt:"#f8fafc",border:"#e2e8f0",borderStrong:"#cbd5e1",
-  text:"#0f172a",text2:"#475569",text3:"#94a3b8",text4:"#cbd5e1",
-  primary:"#3b82f6",danger:"#ef4444",success:"#16a34a"};
+const XLSX_HEADERS=["Qty","Plot","Hs.  Num.","Product","Name","Description","Price","CHILDREN 1 QTY","CHILDREN 1 PRODUCT","CHILDREN 1 NAME","CHILDREN 1 DESCRIPTION","CHILDREN 1 PRICE","CHILDREN 2 QTY","CHILDREN 2 PRODUCT","CHILDREN 2 NAME","CHILDREN 2 DESCRIPTION","CHILDREN 2 PRICE","CHILDREN 3 QTY","CHILDREN 3 PRODUCT","CHILDREN 3 NAME","CHILDREN 3 DESCRIPTION","CHILDREN 3 PRICE","CHILDREN 4 QTY","CHILDREN 4 PRODUCT","CHILDREN 4 NAME","CHILDREN 4 DESCRIPTION","CHILDREN 4 PRICE"];
+const T={bg:"#f1f5f9",card:"#ffffff",cardAlt:"#f8fafc",border:"#e2e8f0",borderStrong:"#cbd5e1",text:"#0f172a",text2:"#475569",text3:"#94a3b8",text4:"#cbd5e1",primary:"#3b82f6",danger:"#ef4444",success:"#16a34a"};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmtDate=iso=>iso?new Date(iso).toLocaleString("en-IE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
 const fmtShort=iso=>iso?new Date(iso).toLocaleDateString("en-IE",{day:"2-digit",month:"short",year:"numeric"}):"—";
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const DR=()=>({installStage:"Not Started",lastInspection:null,finishPhotoKey:null,notes:"",snags:[]});
+const DR=()=>({installStage:"Not Started",lastInspection:null,finishPhotoKeys:[],notes:"",snags:[]});
 const DH=name=>({id:uid(),name,createdAt:new Date().toISOString(),rooms:{Kitchen:DR(),Wardrobe:DR(),Utility:DR()}});
 const sIdx=v=>STAGES.indexOf(v);
 const pct=h=>{const t=ROOMS.length*(STAGES.length-1);return Math.round(ROOMS.reduce((s,r)=>s+sIdx(h.rooms[r].installStage),0)/t*100);};
@@ -83,363 +60,174 @@ const totalOpen=h=>ROOMS.reduce((n,r)=>n+h.rooms[r].snags.filter(s=>!s.resolved)
 const rOpen=r=>r.snags.filter(s=>!s.resolved).length;
 const pColor=p=>p===100?T.success:p>60?T.primary:p>20?"#f59e0b":T.text3;
 const sortHouses=hs=>[...hs].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'}));
+// Backwards-compat photo key readers (handle old single-photo data)
+const snagKeys=s=>Array.isArray(s.photoKeys)?s.photoKeys:s.photoKey?[s.photoKey]:[];
+const finishKeys=r=>Array.isArray(r.finishPhotoKeys)?r.finishPhotoKeys:r.finishPhotoKey?[r.finishPhotoKey]:[];
 
-// ── Storage ────────────────────────────────────────────────────────────────────
-const LS={
-  get:k=>{try{return localStorage.getItem(k);}catch{return null;}},
-  set:(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(e){alert("Storage full — try exporting a backup and clearing old photos.");return false;}},
-  del:k=>{try{localStorage.removeItem(k);}catch{}},
-  keys:()=>{try{return Object.keys(localStorage);}catch{return [];}}
-};
+// ── Local storage ──────────────────────────────────────────────────────────────
+const LS={get:k=>{try{return localStorage.getItem(k);}catch{return null;}},set:(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(e){return false;}},del:k=>{try{localStorage.removeItem(k);}catch{}}};
 const loadH=()=>{try{const d=LS.get("tk4-h");return d?JSON.parse(d):[];}catch{return [];}};
 const loadS=()=>{try{const d=LS.get("tk4-s");return d?JSON.parse(d):{project:"Athenry"};}catch{return {project:"Athenry"};}};
 
-// ── Photo ──────────────────────────────────────────────────────────────────────
-const compress=(dataUrl,max=1000,q=0.72)=>new Promise(res=>{
-  const img=new Image();
-  img.onload=()=>{
-    const sc=Math.min(1,max/Math.max(img.width,img.height));
-    const c=document.createElement('canvas');c.width=~~(img.width*sc);c.height=~~(img.height*sc);
-    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-    res(c.toDataURL('image/jpeg',q));
-  };img.src=dataUrl;
-});
-const saveP=async(k,d)=>{const c=await compress(d);return LS.set(k,c);};
-const getP=k=>k?LS.get(k):null;
-const delP=k=>k&&LS.del(k);
+// ── Supabase / Cloud ───────────────────────────────────────────────────────────
+let sb=null, cloudReady=false;
+const initSupabase=(url,key)=>{
+  if(typeof window.supabase==='undefined'||!window.supabase.createClient)return false;
+  try{sb=window.supabase.createClient(url,key);return true;}catch(e){console.error("SB init:",e);return false;}
+};
+const storedSb=(()=>{try{const d=LS.get("tk-sb");return d?JSON.parse(d):null;}catch{return null;}})();
+if(storedSb&&storedSb.url&&storedSb.key)cloudReady=initSupabase(storedSb.url,storedSb.key);
+
+// ── Photo (localStorage cache + Supabase) ────────────────────────────────────────
+const compress=(dataUrl,stampText,max=1000,q=0.72)=>new Promise(res=>{const img=new Image();img.onload=()=>{const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=~~(img.width*sc);c.height=~~(img.height*sc);const ctx=c.getContext('2d');ctx.drawImage(img,0,0,c.width,c.height);if(stampText){const fs=Math.max(13,Math.round(c.width*0.034));ctx.font=`bold ${fs}px sans-serif`;const pad=Math.round(fs*0.5);const tw=ctx.measureText(stampText).width;const bh=fs+pad*2;ctx.fillStyle="rgba(0,0,0,0.58)";ctx.fillRect(0,c.height-bh,tw+pad*2,bh);ctx.fillStyle="#fff";ctx.textBaseline="middle";ctx.fillText(stampText,pad,c.height-bh/2+1);}res(c.toDataURL('image/jpeg',q));};img.src=dataUrl;});
+const saveP=async(key,dataUrl)=>{const stamp=new Date().toLocaleString("en-IE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});const c=await compress(dataUrl,stamp);LS.set(key,c);if(cloudReady&&sb){try{await sb.from('photos').upsert({key,data:c});}catch(e){console.error("photo save:",e);}}return true;};
+const getP=async key=>{if(!key)return null;const local=LS.get(key);if(local)return local;if(cloudReady&&sb){try{const{data}=await sb.from('photos').select('data').eq('key',key).maybeSingle();if(data&&data.data){LS.set(key,data.data);return data.data;}}catch(e){console.error("photo get:",e);}}return null;};
+const delP=async key=>{if(!key)return;LS.del(key);if(cloudReady&&sb){try{await sb.from('photos').delete().eq('key',key);}catch(e){}}};
 
 // ── JSON Backup / Restore ──────────────────────────────────────────────────────
-const exportBackup=(houses,settings)=>{
-  const sortedHouses=sortHouses(houses);
-  const photos={};
-  sortedHouses.forEach(h=>ROOMS.forEach(r=>{
-    const rm=h.rooms[r];
-    if(rm.finishPhotoKey){const p=getP(rm.finishPhotoKey);if(p)photos[rm.finishPhotoKey]=p;}
-    rm.snags.forEach(s=>{if(s.photoKey){const p=getP(s.photoKey);if(p)photos[s.photoKey]=p;}});
-  }));
-  const data={version:1,exportedAt:new Date().toISOString(),settings,houses:sortedHouses,photos};
-  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=`tracker-backup-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+const exportBackup=async(houses,settings)=>{
+  const sorted=sortHouses(houses);const photos={};
+  for(const h of sorted)for(const r of ROOMS){const rm=h.rooms[r];
+    for(const k of finishKeys(rm)){const p=await getP(k);if(p)photos[k]=p;}
+    for(const s of rm.snags)for(const k of snagKeys(s)){const p=await getP(k);if(p)photos[k]=p;}}
+  const data={version:2,exportedAt:new Date().toISOString(),settings,houses:sorted,photos};
+  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`tracker-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-
-const importBackup=(file,setHouses,setSettings)=>{
+const importBackup=(file,applyHouses,applySettings)=>{
   const reader=new FileReader();
-  reader.onload=e=>{
-    try{
-      const data=JSON.parse(e.target.result);
-      if(!data.version||!Array.isArray(data.houses)){alert("Invalid backup file.");return;}
-      const photoCount=Object.keys(data.photos||{}).length;
-      if(!confirm(`Import ${data.houses.length} house(s) and ${photoCount} photo(s)?\n\nThis will REPLACE all current data on this device.`))return;
-      if(data.photos)Object.entries(data.photos).forEach(([k,v])=>LS.set(k,v));
-      setHouses(data.houses);
-      if(data.settings)setSettings(data.settings);
-      alert(`Imported ${data.houses.length} house(s) and ${photoCount} photo(s) successfully.`);
-    }catch(err){alert("Could not read backup file: "+err.message);}
-  };
+  reader.onload=async e=>{try{const data=JSON.parse(e.target.result);if(!data.version||!Array.isArray(data.houses)){alert("Invalid backup file.");return;}
+    const pc=Object.keys(data.photos||{}).length;
+    if(!confirm(`Import ${data.houses.length} house(s) and ${pc} photo(s)?\n\nThis replaces current data`+(cloudReady?" everywhere (cloud).":" on this device.")))return;
+    if(data.photos)for(const [k,v] of Object.entries(data.photos)){LS.set(k,v);if(cloudReady&&sb)await sb.from('photos').upsert({key:k,data:v});}
+    if(cloudReady&&sb){for(const h of data.houses)await sb.from('houses').upsert({id:h.id,data:h});}
+    applyHouses(data.houses);
+    if(data.settings){applySettings(data.settings);if(cloudReady&&sb)await sb.from('meta').upsert({key:'settings',value:data.settings});}
+    alert(`Imported ${data.houses.length} house(s) and ${pc} photo(s).`);
+  }catch(err){alert("Could not read backup: "+err.message);}};
   reader.readAsText(file);
 };
 
-// ── XLSX Exports ───────────────────────────────────────────────────────────────
+// ── XLSX / PDF Exports ─────────────────────────────────────────────────────────
 const exportSnags=(houses,project)=>{
-  const empty=Array(20).fill("");
-  const rows=[XLSX_HEADERS];
-  let found=false;
-  houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.filter(s=>!s.resolved).forEach(s=>{
-    found=true;
-    let qty=1,name="",desc="";
-    if(s.type==="SNAG_BSAW"||s.type==="SNAG_CNC"){
-      name=s.description||"";
-      desc=[s.material||"",s.height?`H:${s.height}`:"",s.width?`W:${s.width}`:""].filter(Boolean).join(" + ");
-    } else if(s.type==="WRONG_HOUSE"){
-      name=s.description||"Wrong house delivery";
-      desc=`Correct house: ${s.correctHouse||"unknown"}`;
-    } else if(s.type==="EXCESS_MAT"){
-      qty=parseInt(s.quantity)||1;
-      name=s.description||"Excess material delivered";
-      desc=[s.material||"",s.quantity?`Qty:${s.quantity} ${s.unit||""}`:""].filter(Boolean).join(" + ");
-    } else {
-      name=s.description||"";desc="";
-    }
-    rows.push([qty,project||"Athenry",h.name,s.type,name,desc,"",...empty]);
-  })));
+  const empty=Array(20).fill("");const rows=[XLSX_HEADERS];let found=false;
+  houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.filter(s=>!s.resolved).forEach(s=>{found=true;let qty=1,name="",desc="";
+    if(s.type==="SNAG_BSAW"||s.type==="SNAG_CNC"){name=s.description||"";desc=[s.material||"",s.height?`H:${s.height}`:"",s.width?`W:${s.width}`:""].filter(Boolean).join(" + ");}
+    else if(s.type==="WRONG_HOUSE"){name=s.description||"Wrong house delivery";desc=`Correct house: ${s.correctHouse||"unknown"}`;}
+    else if(s.type==="EXCESS_MAT"){qty=parseInt(s.quantity)||1;name=s.description||"Excess material delivered";desc=[s.material||"",s.quantity?`Qty:${s.quantity} ${s.unit||""}`:""].filter(Boolean).join(" + ");}
+    else{name=s.description||"";desc="";}
+    rows.push([qty,project||"Athenry",h.name,s.type,name,desc,"",...empty]);})));
   if(!found){alert("No open snags to export.");return;}
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:14},{wch:30},{wch:40},{wch:8},...Array(20).fill({wch:15})];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"Open Snags");
-  XLSX.writeFile(wb,`Open_Snags_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:14},{wch:30},{wch:40},{wch:8},...Array(20).fill({wch:15})];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Open Snags");XLSX.writeFile(wb,`Open_Snags_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
-
 const exportStatus=houses=>{
   const rows=[["House","Kitchen Stage","Kitchen Snags","Kitchen Notes","Wardrobe Stage","Wardrobe Snags","Wardrobe Notes","Utility Stage","Utility Snags","Utility Notes","Overall %","Kitchen Inspected","Wardrobe Inspected","Utility Inspected"]];
-  houses.forEach(h=>rows.push([h.name,
-    h.rooms.Kitchen.installStage,rOpen(h.rooms.Kitchen),h.rooms.Kitchen.notes||"",
-    h.rooms.Wardrobe.installStage,rOpen(h.rooms.Wardrobe),h.rooms.Wardrobe.notes||"",
-    h.rooms.Utility.installStage,rOpen(h.rooms.Utility),h.rooms.Utility.notes||"",
-    pct(h)+"%",
-    fmtShort(h.rooms.Kitchen.lastInspection),
-    fmtShort(h.rooms.Wardrobe.lastInspection),
-    fmtShort(h.rooms.Utility.lastInspection)
-  ]));
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=rows[0].map(hd=>({wch:hd.includes("Notes")?42:hd.includes("Inspected")?20:18}));
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Status Report");
-  XLSX.writeFile(wb,`Status_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+  houses.forEach(h=>rows.push([h.name,h.rooms.Kitchen.installStage,rOpen(h.rooms.Kitchen),h.rooms.Kitchen.notes||"",h.rooms.Wardrobe.installStage,rOpen(h.rooms.Wardrobe),h.rooms.Wardrobe.notes||"",h.rooms.Utility.installStage,rOpen(h.rooms.Utility),h.rooms.Utility.notes||"",pct(h)+"%",fmtShort(h.rooms.Kitchen.lastInspection),fmtShort(h.rooms.Wardrobe.lastInspection),fmtShort(h.rooms.Utility.lastInspection)]));
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=rows[0].map(hd=>({wch:hd.includes("Notes")?42:hd.includes("Inspected")?20:18}));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Status Report");XLSX.writeFile(wb,`Status_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
-
-// ── PDF Report of Open Snags ───────────────────────────────────────────────────
 const exportPDF=async(houses,project)=>{
-  const { jsPDF } = window.jspdf;
-  const doc=new jsPDF({unit:'mm',format:'a4'});
-  const pageW=210,pageH=297,M=15;
-  let y=M;
-
-  doc.setFontSize(20).setFont(undefined,'bold');
-  doc.text('Open Snags Report',M,y);y+=8;
-  doc.setFontSize(11).setFont(undefined,'normal').setTextColor(100,100,100);
-  doc.text(`Project: ${project||"Athenry"}`,M,y);y+=5;
-  doc.text(`Generated: ${new Date().toLocaleString('en-IE')}`,M,y);y+=8;
-
-  let totalOpen=0;
-  houses.forEach(h=>ROOMS.forEach(r=>totalOpen+=h.rooms[r].snags.filter(s=>!s.resolved).length));
-  if(totalOpen===0){alert("No open snags to export.");return;}
-
-  doc.setFontSize(10).setTextColor(60,60,60);
-  doc.text(`Total open snags: ${totalOpen}`,M,y);y+=10;
-
-  const ensureSpace=(needed)=>{if(y+needed>pageH-M){doc.addPage();y=M;}};
-
-  for(const h of houses){
-    const hsnags=[];
-    ROOMS.forEach(r=>h.rooms[r].snags.filter(s=>!s.resolved).forEach(s=>hsnags.push({...s,room:r})));
-    if(hsnags.length===0)continue;
-
-    ensureSpace(15);
-    doc.setFillColor(241,245,249);
-    doc.rect(M,y-5,pageW-2*M,9,'F');
-    doc.setFontSize(13).setFont(undefined,'bold').setTextColor(15,23,42);
-    doc.text(`Unit: ${h.name}`,M+2,y+1);
-    doc.setFontSize(10).setFont(undefined,'normal').setTextColor(100);
-    doc.text(`${hsnags.length} open snag${hsnags.length!==1?"s":""}`,pageW-M-2,y+1,{align:'right'});
-    y+=10;
-
-    for(const s of hsnags){
-      const photo=s.photoKey?getP(s.photoKey):null;
-      const blockSpace=photo?78:36;
-      ensureSpace(blockSpace);
-
-      const startY=y;
-      const stype=SNAG_TYPES.find(t=>t.code===s.type);
-
-      doc.setFontSize(10).setFont(undefined,'bold');
-      const tc=TC[s.type]||"#646464";
-      const hex=tc.replace('#','');const r=parseInt(hex.slice(0,2),16);const g=parseInt(hex.slice(2,4),16);const b=parseInt(hex.slice(4,6),16);
-      doc.setTextColor(r,g,b);
-      doc.text(`${s.room} • ${stype?.label||s.type}`,M+2,y);
-      doc.setTextColor(120,120,120).setFont(undefined,'normal').setFontSize(9);
-      doc.text(`Logged: ${new Date(s.loggedAt).toLocaleString('en-IE')}`,pageW-M-2,y,{align:'right'});
-      y+=5;
-
-      doc.setFontSize(10).setTextColor(40,40,40);
-      const lines=[];
-      if(s.material)lines.push(`Material: ${s.material}`);
-      const dim=[s.height?`H:${s.height}mm`:"",s.width?`W:${s.width}mm`:""].filter(Boolean).join("  ");
-      if(dim)lines.push(`Size: ${dim}`);
-      if(s.quantity)lines.push(`Quantity: ${s.quantity} ${s.unit||""}`);
-      if(s.correctHouse)lines.push(`Correct house: ${s.correctHouse}`);
-      if(s.description){
-        const wrapped=doc.splitTextToSize(s.description,pageW-2*M-(photo?75:5));
-        wrapped.forEach(w=>lines.push(w));
-      }
-
-      const textX=M+2;
-      const textMaxW=photo?pageW-2*M-78:pageW-2*M-5;
-      lines.forEach(line=>{
-        const wrapped=doc.splitTextToSize(line,textMaxW);
-        wrapped.forEach(w=>{
-          if(y>pageH-M){doc.addPage();y=M;}
-          doc.text(w,textX,y);y+=4.5;
-        });
-      });
-
-      if(photo){
-        try{
-          const imgW=68,imgH=51;
-          doc.addImage(photo,'JPEG',pageW-M-imgW-2,startY+5,imgW,imgH);
-          y=Math.max(y,startY+5+imgH+3);
-        }catch(e){console.error("PDF image error:",e);}
-      }
-
-      doc.setDrawColor(230,230,230);
-      doc.line(M,y+1,pageW-M,y+1);
-      y+=6;
-    }
-    y+=3;
-  }
-
-  const total=doc.getNumberOfPages();
-  for(let i=1;i<=total;i++){
-    doc.setPage(i);
-    doc.setFontSize(8).setTextColor(150,150,150);
-    doc.text(`Page ${i} of ${total}`,pageW/2,pageH-7,{align:'center'});
-  }
-
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const pageW=210,pageH=297,M=15;let y=M;
+  doc.setFontSize(20).setFont(undefined,'bold');doc.text('Open Snags Report',M,y);y+=8;
+  doc.setFontSize(11).setFont(undefined,'normal').setTextColor(100,100,100);doc.text(`Project: ${project||"Athenry"}`,M,y);y+=5;doc.text(`Generated: ${new Date().toLocaleString('en-IE')}`,M,y);y+=8;
+  let tot=0;houses.forEach(h=>ROOMS.forEach(r=>tot+=h.rooms[r].snags.filter(s=>!s.resolved).length));
+  if(tot===0){alert("No open snags to export.");return;}
+  doc.setFontSize(10).setTextColor(60,60,60);doc.text(`Total open snags: ${tot}`,M,y);y+=10;
+  const space=n=>{if(y+n>pageH-M){doc.addPage();y=M;}};
+  for(const h of houses){const hsnags=[];ROOMS.forEach(r=>h.rooms[r].snags.filter(s=>!s.resolved).forEach(s=>hsnags.push({...s,room:r})));if(hsnags.length===0)continue;
+    space(15);doc.setFillColor(241,245,249);doc.rect(M,y-5,pageW-2*M,9,'F');doc.setFontSize(13).setFont(undefined,'bold').setTextColor(15,23,42);doc.text(`Unit: ${h.name}`,M+2,y+1);doc.setFontSize(10).setFont(undefined,'normal').setTextColor(100);doc.text(`${hsnags.length} open snag${hsnags.length!==1?"s":""}`,pageW-M-2,y+1,{align:'right'});y+=10;
+    for(const s of hsnags){const keys=snagKeys(s);space(30);const st=SNAG_TYPES.find(t=>t.code===s.type);
+      doc.setFontSize(10).setFont(undefined,'bold');const hx=(TC[s.type]||"#646464").replace('#','');doc.setTextColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));doc.text(`${s.room} • ${st?.label||s.type}`,M+2,y);
+      doc.setTextColor(120,120,120).setFont(undefined,'normal').setFontSize(9);doc.text(`Logged: ${new Date(s.loggedAt).toLocaleString('en-IE')}`,pageW-M-2,y,{align:'right'});y+=5;
+      doc.setFontSize(10).setTextColor(40,40,40);const lines=[];if(s.material)lines.push(`Material: ${s.material}`);const dim=[s.height?`H:${s.height}mm`:"",s.width?`W:${s.width}mm`:""].filter(Boolean).join("  ");if(dim)lines.push(`Size: ${dim}`);if(s.quantity)lines.push(`Quantity: ${s.quantity} ${s.unit||""}`);if(s.correctHouse)lines.push(`Correct house: ${s.correctHouse}`);if(s.description)doc.splitTextToSize(s.description,pageW-2*M-5).forEach(w=>lines.push(w));
+      lines.forEach(line=>{doc.splitTextToSize(line,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});});
+      if(keys.length){const iw=55,ih=41,gap=4;let x=M+2;y+=2;for(const k of keys){const photo=await getP(k);if(!photo)continue;if(x+iw>pageW-M){x=M+2;y+=ih+gap;}if(y+ih>pageH-M){doc.addPage();y=M;x=M+2;}try{doc.addImage(photo,'JPEG',x,y,iw,ih);}catch(e){}x+=iw+gap;}y+=ih+4;}
+      doc.setDrawColor(230,230,230);doc.line(M,y+1,pageW-M,y+1);y+=6;}
+    y+=3;}
+  const n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8).setTextColor(150,150,150);doc.text(`Page ${i} of ${n}`,pageW/2,pageH-7,{align:'center'});}
   doc.save(`Snags_Report_${new Date().toISOString().slice(0,10)}.pdf`);
 };
 
 // ── UI Atoms ───────────────────────────────────────────────────────────────────
-const PBar=({p,color=T.success,h=6})=>(
-  <div style={{background:T.border,borderRadius:99,height:h,overflow:"hidden",width:"100%"}}>
-    <div style={{width:`${p}%`,height:"100%",background:color,borderRadius:99,transition:"width .5s"}}/>
-  </div>
-);
+const PBar=({p,color=T.success,h=6})=><div style={{background:T.border,borderRadius:99,height:h,overflow:"hidden",width:"100%"}}><div style={{width:`${p}%`,height:"100%",background:color,borderRadius:99,transition:"width .5s"}}/></div>;
+function Btn({children,onClick,v,sm,sx={}}){const vs={_:{background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text2},primary:{background:T.primary,border:"none",color:"#fff"},danger:{background:"#fff",border:`1px solid ${T.danger}55`,color:T.danger},success:{background:"#fff",border:`1px solid ${T.success}55`,color:T.success},ghost:{background:"transparent",border:"none",color:T.text2}};return <button className="btn" onClick={onClick} style={{...(vs[v]||vs._),padding:sm?"6px 12px":"10px 16px",fontSize:sm?12:14,borderRadius:9,cursor:"pointer",fontWeight:600,minHeight:sm?34:44,...sx}}>{children}</button>;}
+const L=({c})=><div style={{fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,fontWeight:600}}>{c}</div>;
+const II={background:T.cardAlt,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:9,padding:"10px 12px",fontSize:14,width:"100%",outline:"none",boxSizing:"border-box",minHeight:44,transition:"border .15s, box-shadow .15s"};
+const Card=({children,extraSx})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 1px 3px rgba(15,23,42,.04)",...extraSx}}>{children}</div>;
 
-function Btn({children,onClick,v,sm,sx={}}){
-  const vs={
-    _:{background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text2},
-    primary:{background:T.primary,border:"none",color:"#fff"},
-    danger:{background:"#fff",border:`1px solid ${T.danger}55`,color:T.danger},
-    success:{background:"#fff",border:`1px solid ${T.success}55`,color:T.success},
-    ghost:{background:"transparent",border:"none",color:T.text2}
-  };
-  return <button className="btn" onClick={onClick} style={{...(vs[v]||vs._),padding:sm?"6px 12px":"10px 16px",fontSize:sm?12:14,
-    borderRadius:9,cursor:"pointer",fontWeight:600,minHeight:sm?34:44,...sx}}>{children}</button>;
+// Loads a photo by key, displays it, optional remove + caption
+function PhotoThumb({photoKey,onRemove,caption,size=110}){
+  const [src,setSrc]=useState(null);
+  useEffect(()=>{let on=true;getP(photoKey).then(p=>{if(on)setSrc(p);});return()=>{on=false;};},[photoKey]);
+  return(
+    <div style={{position:"relative",width:size,height:size,borderRadius:9,overflow:"hidden",border:`1px solid ${T.borderStrong}`,background:T.cardAlt,flexShrink:0}}>
+      {src?<img src={src} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:T.text3,fontSize:11}}>…</div>}
+      {caption&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"#000a",color:"#fff",fontSize:9,padding:"2px 5px",fontFamily:"'DM Mono',monospace"}}>{caption}</div>}
+      {onRemove&&<button onClick={onRemove} style={{position:"absolute",top:3,right:3,background:"#000c",border:"none",color:"#fff",borderRadius:5,cursor:"pointer",padding:"1px 7px",fontSize:13}}>×</button>}
+    </div>
+  );
+}
+// Dashed "add photo" tile
+function AddPhotoTile({onAdd,size=110,label="Add"}){
+  const ref=useRef();
+  const onFile=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>onAdd(ev.target.result);r.readAsDataURL(f);e.target.value="";};
+  return(<><input ref={ref} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
+    <button onClick={()=>ref.current?.click()} style={{width:size,height:size,borderRadius:9,border:`2px dashed ${T.borderStrong}`,background:T.cardAlt,color:T.text2,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,fontSize:12,fontWeight:600,flexShrink:0}}><span style={{fontSize:24}}>📷</span>{label}</button></>);
 }
 
-const L=({c})=><div style={{fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,fontWeight:600}}>{c}</div>;
-const II={background:T.cardAlt,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:9,
-  padding:"10px 12px",fontSize:14,width:"100%",outline:"none",boxSizing:"border-box",minHeight:44,transition:"border .15s, box-shadow .15s"};
-
-// ── Snag Form (add or edit) ────────────────────────────────────────────────────
+// ── Snag Form (add or edit, multi-photo) ─────────────────────────────────────────
 function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 Log New Snag"}){
-  const [f,sf]=useState(()=>initial||{type:"SNAG_BSAW",material:MATS[0],height:"",width:"",description:"",correctHouse:"",quantity:"",unit:"sheets",photoDataUrl:null});
-  const [photoChanged,setPhotoChanged]=useState(false);
-  const ref=useRef();
-  const sel=SNAG_TYPES.find(t=>t.code===f.type);
-  const set=p=>sf(x=>({...x,...p}));
-  const onFile=e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>{set({photoDataUrl:ev.target.result});setPhotoChanged(true);};r.readAsDataURL(file);e.target.value="";};
-  const removePhoto=()=>{set({photoDataUrl:null});setPhotoChanged(true);};
-
+  const [f,sf]=useState(()=>initial||{type:"SNAG_BSAW",material:MATS[0],height:"",width:"",description:"",correctHouse:"",quantity:"",unit:"sheets",photos:[]});
+  const sel=SNAG_TYPES.find(t=>t.code===f.type);const set=p=>sf(x=>({...x,...p}));
+  const addPhoto=dataUrl=>set({photos:[...(f.photos||[]),{dataUrl,key:null}]});
+  const removePhoto=i=>set({photos:(f.photos||[]).filter((_,idx)=>idx!==i)});
   return(
     <div style={{background:T.cardAlt,border:`1px solid ${T.borderStrong}`,borderRadius:12,padding:16,marginBottom:12}}>
       <div style={{fontWeight:700,fontSize:15,color:T.text,marginBottom:14}}>{title}</div>
-
-      <div style={{marginBottom:12}}><L c="Issue Type"/>
-        <select value={f.type} onChange={e=>set({type:e.target.value})} style={{...II,background:"#fff"}}>
-          {SNAG_TYPES.map(t=><option key={t.code} value={t.code}>{t.label}</option>)}
-        </select>
-      </div>
-
+      <div style={{marginBottom:12}}><L c="Issue Type"/><select value={f.type} onChange={e=>set({type:e.target.value})} style={{...II,background:"#fff"}}>{SNAG_TYPES.map(t=><option key={t.code} value={t.code}>{t.label}</option>)}</select></div>
       {sel?.panel&&<>
-        <div style={{marginBottom:12}}><L c="Material / Board Type"/>
-          <select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>
-            {MATS.map(m=><option key={m}>{m}</option>)}
-          </select>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-          <div><L c="Height (mm)"/><input type="number" inputMode="numeric" placeholder="720" value={f.height||""} onChange={e=>set({height:e.target.value})} style={{...II,background:"#fff"}}/></div>
-          <div><L c="Width (mm)"/><input type="number" inputMode="numeric" placeholder="600" value={f.width||""} onChange={e=>set({width:e.target.value})} style={{...II,background:"#fff"}}/></div>
-        </div>
-      </>}
-
+        <div style={{marginBottom:12}}><L c="Material / Board Type"/><select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>{MATS.map(m=><option key={m}>{m}</option>)}</select></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}><div><L c="Height (mm)"/><input type="number" inputMode="numeric" placeholder="720" value={f.height||""} onChange={e=>set({height:e.target.value})} style={{...II,background:"#fff"}}/></div><div><L c="Width (mm)"/><input type="number" inputMode="numeric" placeholder="600" value={f.width||""} onChange={e=>set({width:e.target.value})} style={{...II,background:"#fff"}}/></div></div></>}
       {sel?.excess&&<>
-        <div style={{marginBottom:12}}><L c="Material"/>
-          <select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>
-            {MATS.map(m=><option key={m}>{m}</option>)}
-          </select>
+        <div style={{marginBottom:12}}><L c="Material"/><select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>{MATS.map(m=><option key={m}>{m}</option>)}</select></div>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:12}}><div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity||""} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div><div><L c="Unit"/><select value={f.unit||"sheets"} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div></div></>}
+      {f.type==="WRONG_HOUSE"&&<div style={{marginBottom:12}}><L c="Correct House / Plot"/><input placeholder="e.g. Plot 4" value={f.correctHouse||""} onChange={e=>set({correctHouse:e.target.value})} style={{...II,background:"#fff"}}/></div>}
+      <div style={{marginBottom:12}}><L c="Details / Description"/><textarea placeholder="Describe the issue…" rows={2} value={f.description||""} onChange={e=>set({description:e.target.value})} style={{...II,background:"#fff",resize:"vertical"}}/></div>
+      <div style={{marginBottom:16}}><L c="Photos (add as many as you like)"/>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {(f.photos||[]).map((p,i)=>(<div key={i} style={{position:"relative",width:100,height:100,borderRadius:9,overflow:"hidden",border:`1px solid ${T.borderStrong}`,flexShrink:0}}><img src={p.dataUrl} style={{width:"100%",height:"100%",objectFit:"cover"}}/><button onClick={()=>removePhoto(i)} style={{position:"absolute",top:3,right:3,background:"#000c",border:"none",color:"#fff",borderRadius:5,cursor:"pointer",padding:"1px 7px",fontSize:13}}>×</button></div>))}
+          <AddPhotoTile onAdd={addPhoto} size={100} label="Add"/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:12}}>
-          <div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity||""} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div>
-          <div><L c="Unit"/><select value={f.unit||"sheets"} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div>
-        </div>
-      </>}
-
-      {f.type==="WRONG_HOUSE"&&<div style={{marginBottom:12}}><L c="Correct House / Plot"/>
-        <input placeholder="e.g. Plot 4" value={f.correctHouse||""} onChange={e=>set({correctHouse:e.target.value})} style={{...II,background:"#fff"}}/>
-      </div>}
-
-      <div style={{marginBottom:12}}><L c="Details / Description"/>
-        <textarea placeholder="Describe the issue…" rows={2} value={f.description||""} onChange={e=>set({description:e.target.value})} style={{...II,background:"#fff",resize:"vertical"}}/>
       </div>
-
-      <div style={{marginBottom:16}}><L c="Photo"/>
-        {f.photoDataUrl?(
-          <div style={{position:"relative",display:"inline-block"}}>
-            <img src={f.photoDataUrl} style={{maxWidth:180,maxHeight:130,borderRadius:9,border:`1px solid ${T.borderStrong}`,display:"block"}}/>
-            <button onClick={removePhoto} style={{position:"absolute",top:5,right:5,background:"#000c",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",padding:"3px 9px",fontSize:14}}>×</button>
-          </div>
-        ):(
-          <><input ref={ref} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
-          <Btn sm onClick={()=>ref.current?.click()}>📷 Take / Upload Photo</Btn></>
-        )}
-      </div>
-
-      <div style={{display:"flex",gap:8}}>
-        <Btn v="primary" onClick={()=>onSubmit({...f,_photoChanged:photoChanged})}>{submitLabel}</Btn>
-        <Btn v="ghost" sm onClick={onCancel}>Cancel</Btn>
-      </div>
+      <div style={{display:"flex",gap:8}}><Btn v="primary" onClick={()=>onSubmit(f)}>{submitLabel}</Btn><Btn v="ghost" sm onClick={onCancel}>Cancel</Btn></div>
     </div>
   );
 }
 
-// ── Snag Item ──────────────────────────────────────────────────────────────────
+// ── Snag Item (multi-photo) ──────────────────────────────────────────────────────
 function SnagItem({snag,onToggle,onDelete,onEdit}){
-  const [photo,setPhoto]=useState(null);
-  const [exp,setExp]=useState(false);
-  const t=SNAG_TYPES.find(x=>x.code===snag.type);
-  const c=TC[snag.type]||T.text3;
-  const loadPh=()=>{if(!photo&&snag.photoKey){const p=getP(snag.photoKey);if(p)setPhoto(p);}};
-
-  const summary=snag.description
-    ?(snag.description.length>55?snag.description.slice(0,55)+"…":snag.description)
-    :snag.material
-      ?[snag.material,snag.height&&`H:${snag.height}mm`,snag.width&&`W:${snag.width}mm`,snag.quantity&&`×${snag.quantity} ${snag.unit||""}`].filter(Boolean).join(" ")
-      :"—";
-
+  const [exp,setExp]=useState(false);const t=SNAG_TYPES.find(x=>x.code===snag.type);const c=TC[snag.type]||T.text3;
+  const keys=snagKeys(snag);
+  const summary=snag.description?(snag.description.length>55?snag.description.slice(0,55)+"…":snag.description):snag.material?[snag.material,snag.height&&`H:${snag.height}mm`,snag.width&&`W:${snag.width}mm`,snag.quantity&&`×${snag.quantity} ${snag.unit||""}`].filter(Boolean).join(" "):"—";
   return(
     <div style={{border:`1px solid ${snag.resolved?T.border:c+"55"}`,borderRadius:11,marginBottom:8,overflow:"hidden",background:snag.resolved?T.cardAlt:"#fff"}}>
-      <div style={{padding:"11px 12px",display:"flex",alignItems:"center",gap:9,cursor:"pointer",minHeight:54}} onClick={()=>{setExp(e=>!e);if(!exp)loadPh();}}>
-        <button onClick={e=>{e.stopPropagation();onToggle();}} style={{
-          background:snag.resolved?T.success+"22":T.danger+"22",border:`1px solid ${snag.resolved?T.success+"77":T.danger+"77"}`,
-          color:snag.resolved?T.success:T.danger,borderRadius:7,padding:"5px 10px",cursor:"pointer",
-          fontSize:10,fontFamily:"'DM Mono',monospace",fontWeight:600,whiteSpace:"nowrap",flexShrink:0,minHeight:34
-        }}>{snag.resolved?"DONE":"OPEN"}</button>
+      <div style={{padding:"11px 12px",display:"flex",alignItems:"center",gap:9,cursor:"pointer",minHeight:54}} onClick={()=>setExp(e=>!e)}>
+        <button onClick={e=>{e.stopPropagation();onToggle();}} style={{background:snag.resolved?T.success+"22":T.danger+"22",border:`1px solid ${snag.resolved?T.success+"77":T.danger+"77"}`,color:snag.resolved?T.success:T.danger,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:10,fontFamily:"'DM Mono',monospace",fontWeight:600,whiteSpace:"nowrap",flexShrink:0,minHeight:34}}>{snag.resolved?"DONE":"OPEN"}</button>
         <span style={{fontSize:10,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace",flexShrink:0,minWidth:68}}>{(t?.label||"").split(" ").slice(0,2).join(" ")}</span>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,color:snag.resolved?T.text3:T.text,textDecoration:snag.resolved?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{summary}</div>
-          <div style={{fontSize:10,color:T.text3,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{fmtDate(snag.loggedAt)}</div>
-        </div>
-        {snag.photoKey&&<span style={{flexShrink:0,fontSize:14}}>📷</span>}
+        <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:snag.resolved?T.text3:T.text,textDecoration:snag.resolved?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{summary}</div><div style={{fontSize:10,color:T.text3,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{fmtDate(snag.loggedAt)}</div></div>
+        {keys.length>0&&<span style={{flexShrink:0,fontSize:13,color:T.text2}}>📷{keys.length>1?keys.length:""}</span>}
         <span style={{color:T.text3,fontSize:11,flexShrink:0}}>{exp?"▲":"▼"}</span>
       </div>
       {exp&&(
         <div style={{padding:"10px 14px 14px",borderTop:`1px solid ${T.border}`,background:T.cardAlt}}>
           {snag.material&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>Material: <span style={{color:T.text,fontWeight:500}}>{snag.material}</span></div>}
-          {(snag.height||snag.width)&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>
-            {snag.height&&<>H: <span style={{color:T.text,fontWeight:500}}>{snag.height}mm  </span></>}
-            {snag.width&&<>W: <span style={{color:T.text,fontWeight:500}}>{snag.width}mm</span></>}
-          </div>}
+          {(snag.height||snag.width)&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>{snag.height&&<>H: <span style={{color:T.text,fontWeight:500}}>{snag.height}mm  </span></>}{snag.width&&<>W: <span style={{color:T.text,fontWeight:500}}>{snag.width}mm</span></>}</div>}
           {snag.quantity&&<div style={{fontSize:13,color:"#f97316",marginBottom:4,fontWeight:600}}>Qty: {snag.quantity} {snag.unit||""}</div>}
           {snag.correctHouse&&<div style={{fontSize:13,color:"#ec4899",marginBottom:4,fontWeight:600}}>→ Correct house: {snag.correctHouse}</div>}
           {snag.description&&<div style={{fontSize:14,color:T.text,marginBottom:8,lineHeight:1.55}}>{snag.description}</div>}
-          {snag.photoKey&&(
-            <div style={{marginTop:8,marginBottom:10}}>
-              {photo?(
-                <div style={{position:"relative",display:"inline-block"}}>
-                  <img src={photo} style={{maxWidth:"100%",maxHeight:280,borderRadius:10,border:`1px solid ${T.borderStrong}`,display:"block"}}/>
-                  <div style={{position:"absolute",bottom:7,left:7,background:"#000d",color:"#fff",fontSize:11,padding:"4px 10px",borderRadius:6,fontFamily:"'DM Mono',monospace"}}>📷 {fmtDate(snag.loggedAt)}</div>
-                </div>
-              ):<Btn sm onClick={loadPh}>Load Photo</Btn>}
-            </div>
-          )}
-          <div style={{display:"flex",gap:8,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
-            <Btn sm v="primary" onClick={onEdit}>✏️ Edit</Btn>
-            <Btn sm v="danger" onClick={()=>{if(confirm("Delete this snag?"))onDelete();}}>🗑 Delete</Btn>
-          </div>
+          {keys.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:8,marginBottom:10}}>{keys.map(k=><PhotoThumb key={k} photoKey={k} size={130}/>)}</div>}
+          <div style={{display:"flex",gap:8,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`}}><Btn sm v="primary" onClick={onEdit}>✏️ Edit</Btn><Btn sm v="danger" onClick={()=>{if(confirm("Delete this snag?"))onDelete();}}>🗑 Delete</Btn></div>
         </div>
       )}
     </div>
@@ -447,195 +235,63 @@ function SnagItem({snag,onToggle,onDelete,onEdit}){
 }
 
 // ── Room Panel ─────────────────────────────────────────────────────────────────
-const Card=({children,extraSx})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 1px 3px rgba(15,23,42,.04)",...extraSx}}>{children}</div>;
-
 function RoomPanel({houseId,room,rd,onUpdate}){
-  const [showAdd,setShowAdd]=useState(false);
-  const [editing,setEditing]=useState(null); // { snagId, initial }
-  const finRef=useRef();
-  const [finPh,setFinPh]=useState(()=>rd.finishPhotoKey?getP(rd.finishPhotoKey):null);
-
+  const [showAdd,setShowAdd]=useState(false);const [editing,setEditing]=useState(null);
   const upd=d=>onUpdate(d);
   const setStage=s=>upd({...rd,installStage:s,lastInspection:new Date().toISOString()});
   const stampNow=()=>upd({...rd,lastInspection:new Date().toISOString()});
-
-  const submitNew=async fd=>{
-    let pk=null;
-    if(fd.photoDataUrl){pk=`ph:${uid()}`;await saveP(pk,fd.photoDataUrl);}
-    const {photoDataUrl,_photoChanged,...rest}=fd;
-    upd({...rd,lastInspection:new Date().toISOString(),snags:[...rd.snags,{...rest,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKey:pk}]});
-    setShowAdd(false);
-  };
-
-  const startEdit=snag=>{
-    let dataUrl=null;
-    if(snag.photoKey)dataUrl=getP(snag.photoKey);
-    setEditing({
-      snagId:snag.id,
-      initial:{
-        type:snag.type,
-        material:snag.material||MATS[0],
-        height:snag.height||"",
-        width:snag.width||"",
-        description:snag.description||"",
-        correctHouse:snag.correctHouse||"",
-        quantity:snag.quantity||"",
-        unit:snag.unit||"sheets",
-        photoDataUrl:dataUrl
-      }
-    });
-    setShowAdd(false);
-  };
-
-  const submitEdit=async fd=>{
-    const old=rd.snags.find(s=>s.id===editing.snagId);
-    if(!old){setEditing(null);return;}
-    let pk=old.photoKey;
-    if(fd._photoChanged){
-      if(old.photoKey)delP(old.photoKey);
-      if(fd.photoDataUrl){
-        pk=`ph:${uid()}`;
-        await saveP(pk,fd.photoDataUrl);
-      } else {
-        pk=null;
-      }
-    }
-    const {photoDataUrl,_photoChanged,...rest}=fd;
-    upd({
-      ...rd,
-      lastInspection:new Date().toISOString(),
-      snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,photoKey:pk,editedAt:new Date().toISOString()}:s)
-    });
-    setEditing(null);
-  };
-
+  const fk=finishKeys(rd);
+  const addFinishPhoto=async dataUrl=>{const k=`ph:fin:${uid()}`;await saveP(k,dataUrl);upd({...rd,finishPhotoKeys:[...finishKeys(rd),k],lastInspection:new Date().toISOString()});};
+  const removeFinishPhoto=async k=>{await delP(k);upd({...rd,finishPhotoKeys:finishKeys(rd).filter(x=>x!==k)});};
+  const submitNew=async fd=>{const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:[...rd.snags,{...rest,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKeys}]});setShowAdd(false);};
+  const startEdit=async snag=>{const keys=snagKeys(snag);const photos=[];for(const k of keys){const d=await getP(k);if(d)photos.push({dataUrl:d,key:k});}setEditing({snagId:snag.id,initial:{type:snag.type,material:snag.material||MATS[0],height:snag.height||"",width:snag.width||"",description:snag.description||"",correctHouse:snag.correctHouse||"",quantity:snag.quantity||"",unit:snag.unit||"sheets",photos}});setShowAdd(false);};
+  const submitEdit=async fd=>{const old=rd.snags.find(s=>s.id===editing.snagId);if(!old){setEditing(null);return;}const oldKeys=snagKeys(old);const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}for(const k of oldKeys)if(!photoKeys.includes(k))delP(k);const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,photoKeys,photoKey:undefined,editedAt:new Date().toISOString()}:s)});setEditing(null);};
   const tog=id=>upd({...rd,snags:rd.snags.map(s=>s.id===id?{...s,resolved:!s.resolved,resolvedAt:!s.resolved?new Date().toISOString():null}:s)});
-  const del=id=>{const s=rd.snags.find(x=>x.id===id);delP(s?.photoKey);upd({...rd,snags:rd.snags.filter(x=>x.id!==id)});};
-
-  const onFinFile=async e=>{
-    const file=e.target.files[0];if(!file)return;
-    const r=new FileReader();
-    r.onload=async ev=>{const k=`ph:fin:${houseId}:${room}`;const ok=await saveP(k,ev.target.result);
-      if(ok){const d=getP(k);setFinPh(d);upd({...rd,finishPhotoKey:k});}
-    };r.readAsDataURL(file);e.target.value="";
-  };
-
+  const del=id=>{const s=rd.snags.find(x=>x.id===id);snagKeys(s||{}).forEach(delP);upd({...rd,snags:rd.snags.filter(x=>x.id!==id)});};
   const open=rOpen(rd);
-
-  const renderSnag=s=>editing?.snagId===s.id
-    ? <SnagForm key={s.id} initial={editing.initial} onSubmit={submitEdit} onCancel={()=>setEditing(null)} submitLabel="Save Changes" title="✏️ Edit Snag"/>
-    : <SnagItem key={s.id} snag={s} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)} onEdit={()=>startEdit(s)}/>;
-
+  const renderSnag=s=>editing?.snagId===s.id?<SnagForm key={s.id} initial={editing.initial} onSubmit={submitEdit} onCancel={()=>setEditing(null)} submitLabel="Save Changes" title="✏️ Edit Snag"/>:<SnagItem key={s.id} snag={s} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)} onEdit={()=>startEdit(s)}/>;
   return(
     <div>
       <Card>
         <L c="Installation Stage"/>
-        <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
-          {STAGES.map(s=>{const a=rd.installStage===s;const c=SC[s];return(
-            <button key={s} className="btn" onClick={()=>setStage(s)} style={{
-              background:a?c+"15":"#fff",border:`1.5px solid ${a?c:T.border}`,
-              color:a?c:T.text2,borderRadius:9,padding:"8px 14px",cursor:"pointer",
-              fontSize:13,fontWeight:a?700:500,display:"flex",alignItems:"center",gap:7,minHeight:42
-            }}>
-              <span style={{width:9,height:9,borderRadius:"50%",background:c,boxShadow:a?`0 0 0 3px ${c}33`:"none",flexShrink:0}}/>
-              {s}
-            </button>
-          );})}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:13,paddingTop:13,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:T.text2,flex:1}}>
-            Last inspection:&nbsp;<span style={{color:T.text,fontFamily:"'DM Mono',monospace",fontWeight:500}}>{fmtDate(rd.lastInspection)}</span>
-          </span>
-          <Btn sm onClick={stampNow}>🕐 Stamp Now</Btn>
-        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:7}}>{STAGES.map(s=>{const a=rd.installStage===s;const c=SC[s];return(<button key={s} className="btn" onClick={()=>setStage(s)} style={{background:a?c+"15":"#fff",border:`1.5px solid ${a?c:T.border}`,color:a?c:T.text2,borderRadius:9,padding:"8px 14px",cursor:"pointer",fontSize:13,fontWeight:a?700:500,display:"flex",alignItems:"center",gap:7,minHeight:42}}><span style={{width:9,height:9,borderRadius:"50%",background:c,boxShadow:a?`0 0 0 3px ${c}33`:"none",flexShrink:0}}/>{s}</button>);})}</div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:13,paddingTop:13,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}><span style={{fontSize:12,color:T.text2,flex:1}}>Last inspection:&nbsp;<span style={{color:T.text,fontFamily:"'DM Mono',monospace",fontWeight:500}}>{fmtDate(rd.lastInspection)}</span></span><Btn sm onClick={stampNow}>🕐 Stamp Now</Btn></div>
       </Card>
-
       {rd.installStage==="Finished"&&(
         <Card extraSx={{borderColor:T.success+"66",background:T.success+"08"}}>
-          <L c="✓ Completion Photo"/>
-          {finPh?(
-            <div style={{position:"relative",display:"inline-block"}}>
-              <img src={finPh} style={{maxWidth:"100%",maxHeight:300,borderRadius:10,border:`1px solid ${T.success}77`,display:"block"}}/>
-              <div style={{position:"absolute",bottom:8,left:8,background:"#000d",color:"#fff",fontSize:12,padding:"4px 11px",borderRadius:7,fontFamily:"'DM Mono',monospace",fontWeight:500}}>
-                ✓ FINISHED · {fmtDate(rd.lastInspection)}
-              </div>
-              <button onClick={()=>{setFinPh(null);delP(rd.finishPhotoKey);upd({...rd,finishPhotoKey:null});}} style={{position:"absolute",top:7,right:7,background:"#000d",border:"none",color:"#fff",borderRadius:7,cursor:"pointer",padding:"4px 11px",fontSize:13}}>Replace</button>
-            </div>
-          ):(
-            <>
-              <div style={{fontSize:13,color:T.text2,marginBottom:10}}>Photograph the finished room to complete sign-off.</div>
-              <input ref={finRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFinFile}/>
-              <Btn v="success" sm onClick={()=>finRef.current?.click()}>📷 Add Completion Photo</Btn>
-            </>
-          )}
+          <L c="✓ Completion Photos"/>
+          <div style={{fontSize:12,color:T.text2,marginBottom:10}}>Add as many photos as you like to record the finished room.</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{fk.map(k=><PhotoThumb key={k} photoKey={k} onRemove={()=>removeFinishPhoto(k)} size={120}/>)}<AddPhotoTile onAdd={addFinishPhoto} size={120} label="Add photo"/></div>
         </Card>
       )}
-
       <Card extraSx={{padding:0,overflow:"hidden"}}>
         <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:54,flexWrap:"wrap",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontWeight:700,fontSize:15,color:T.text}}>Snags & Issues</span>
-            {open>0&&<span style={{background:T.danger+"15",color:T.danger,border:`1px solid ${T.danger}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{open} open</span>}
-            {rd.snags.filter(s=>s.resolved).length>0&&<span style={{background:T.success+"15",color:T.success,border:`1px solid ${T.success}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{rd.snags.filter(s=>s.resolved).length} done</span>}
-          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:15,color:T.text}}>Snags & Issues</span>{open>0&&<span style={{background:T.danger+"15",color:T.danger,border:`1px solid ${T.danger}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{open} open</span>}{rd.snags.filter(s=>s.resolved).length>0&&<span style={{background:T.success+"15",color:T.success,border:`1px solid ${T.success}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{rd.snags.filter(s=>s.resolved).length} done</span>}</div>
           <Btn sm v={showAdd?"ghost":"primary"} onClick={()=>{setShowAdd(v=>!v);setEditing(null);}}>{showAdd?"✕ Cancel":"+ Log Snag"}</Btn>
         </div>
         <div style={{padding:showAdd||editing||rd.snags.length>0?"12px":"14px 16px"}}>
           {showAdd&&<SnagForm onSubmit={submitNew} onCancel={()=>setShowAdd(false)}/>}
           {rd.snags.length===0&&!showAdd&&<div style={{color:T.text3,fontSize:13,fontStyle:"italic"}}>No snags logged for this room</div>}
           {rd.snags.filter(s=>!s.resolved).map(renderSnag)}
-          {rd.snags.filter(s=>s.resolved).length>0&&(
-            <details style={{marginTop:4}}>
-              <summary style={{fontSize:12,color:T.text2,padding:"7px 0",userSelect:"none",fontWeight:500}}>
-                Show resolved ({rd.snags.filter(s=>s.resolved).length}) ▾
-              </summary>
-              <div style={{marginTop:6}}>
-                {rd.snags.filter(s=>s.resolved).map(renderSnag)}
-              </div>
-            </details>
-          )}
+          {rd.snags.filter(s=>s.resolved).length>0&&(<details style={{marginTop:4}}><summary style={{fontSize:12,color:T.text2,padding:"7px 0",userSelect:"none",fontWeight:500}}>Show resolved ({rd.snags.filter(s=>s.resolved).length}) ▾</summary><div style={{marginTop:6}}>{rd.snags.filter(s=>s.resolved).map(renderSnag)}</div></details>)}
         </div>
       </Card>
-
-      <Card>
-        <L c="Notes"/>
-        <textarea value={rd.notes} onChange={e=>upd({...rd,notes:e.target.value})} placeholder="Add notes for this room…" rows={3}
-          style={{...II,background:"#fff",resize:"vertical"}}/>
-      </Card>
+      <Card><L c="Notes"/><textarea value={rd.notes} onChange={e=>upd({...rd,notes:e.target.value})} placeholder="Add notes for this room…" rows={3} style={{...II,background:"#fff",resize:"vertical"}}/></Card>
     </div>
   );
 }
 
 // ── House Detail ───────────────────────────────────────────────────────────────
 function HouseDetail({house,onUpdate,onBack}){
-  const [ar,setAr]=useState("Kitchen");
-  const p=pct(house);const pc=pColor(p);
+  const [ar,setAr]=useState("Kitchen");const p=pct(house);const pc=pColor(p);
   return(
     <div style={{minHeight:"100vh",background:T.bg}}>
       <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"14px 15px 0",position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 3px rgba(15,23,42,.04)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-          <Btn sm onClick={onBack}>← Back</Btn>
-          <h1 style={{margin:0,flex:1,fontSize:19,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400}}>{house.name}</h1>
-          <span style={{fontSize:18,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span>
-        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><Btn sm onClick={onBack}>← Back</Btn><h1 style={{margin:0,flex:1,fontSize:19,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400}}>{house.name}</h1><span style={{fontSize:18,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span></div>
         <PBar p={p} color={pc} h={5}/>
-        <div style={{display:"flex",marginTop:10}}>
-          {ROOMS.map(r=>{const o=rOpen(house.rooms[r]);return(
-            <button key={r} onClick={()=>setAr(r)} style={{
-              flex:1,padding:"11px 5px",background:"none",border:"none",
-              borderBottom:ar===r?`3px solid ${T.primary}`:"3px solid transparent",
-              color:ar===r?T.primary:T.text2,cursor:"pointer",fontSize:14,
-              fontWeight:ar===r?700:500,minHeight:48
-            }}>
-              {r}{o>0&&<span style={{background:T.danger,color:"#fff",borderRadius:99,fontSize:10,padding:"2px 7px",marginLeft:6,fontWeight:700}}>{o}</span>}
-            </button>
-          );})}
-        </div>
+        <div style={{display:"flex",marginTop:10}}>{ROOMS.map(r=>{const o=rOpen(house.rooms[r]);return(<button key={r} onClick={()=>setAr(r)} style={{flex:1,padding:"11px 5px",background:"none",border:"none",borderBottom:ar===r?`3px solid ${T.primary}`:"3px solid transparent",color:ar===r?T.primary:T.text2,cursor:"pointer",fontSize:14,fontWeight:ar===r?700:500,minHeight:48}}>{r}{o>0&&<span style={{background:T.danger,color:"#fff",borderRadius:99,fontSize:10,padding:"2px 7px",marginLeft:6,fontWeight:700}}>{o}</span>}</button>);})}</div>
       </div>
-      <div style={{padding:"15px 14px 70px",maxWidth:700,margin:"0 auto"}}>
-        <RoomPanel key={ar} houseId={house.id} room={ar} rd={house.rooms[ar]}
-          onUpdate={upd=>onUpdate({...house,rooms:{...house.rooms,[ar]:upd}})}/>
-      </div>
+      <div style={{padding:"15px 14px 70px",maxWidth:700,margin:"0 auto"}}><RoomPanel key={ar} houseId={house.id} room={ar} rd={house.rooms[ar]} onUpdate={upd=>onUpdate({...house,rooms:{...house.rooms,[ar]:upd}})}/></div>
     </div>
   );
 }
@@ -645,36 +301,8 @@ function HouseCard({house,onSelect,onDelete}){
   const p=pct(house),open=totalOpen(house),pc=pColor(p);
   return(
     <div className="hcard" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",overflow:"hidden"}} onClick={onSelect}>
-      <div style={{padding:"16px 16px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-          <div>
-            <div style={{fontSize:10,color:T.text3,fontFamily:"'DM Mono',monospace",marginBottom:3,letterSpacing:1.5,fontWeight:600}}>UNIT</div>
-            <div style={{fontSize:19,fontWeight:700,color:T.text}}>{house.name}</div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <span style={{fontSize:24,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span>
-            <button onClick={e=>{e.stopPropagation();if(confirm(`Delete ${house.name}? This cannot be undone.`))onDelete();}}
-              style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:20,minWidth:36,minHeight:44,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-          </div>
-        </div>
-        <PBar p={p} color={pc}/>
-        {open>0&&<div style={{marginTop:9,fontSize:12,color:T.danger,fontWeight:600}}>⚠ {open} open snag{open!==1?"s":""}</div>}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",marginTop:12,background:T.cardAlt}}>
-        {ROOMS.map((r,i)=>{const rm=house.rooms[r];const o=rOpen(rm);const c=SC[rm.installStage]||T.text3;
-          return(
-            <div key={r} style={{padding:"10px 11px",borderTop:`1px solid ${T.border}`,borderRight:i<2?`1px solid ${T.border}`:"none"}}>
-              <div style={{fontSize:9,color:T.text3,textTransform:"uppercase",letterSpacing:.5,marginBottom:4,fontWeight:600}}>{r}</div>
-              <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
-                <span style={{width:8,height:8,borderRadius:"50%",background:c,boxShadow:`0 0 0 2px ${c}33`,flexShrink:0}}/>
-                <span style={{fontSize:9,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1.4,fontWeight:600}}>{rm.installStage}</span>
-              </div>
-              {o>0&&<div style={{fontSize:9,color:T.danger,fontWeight:600}}>{o} snag{o!==1?"s":""}</div>}
-              {rm.installStage==="Finished"&&<div style={{fontSize:9,color:T.success,fontWeight:600}}>✓{rm.finishPhotoKey?" + photo":""}</div>}
-            </div>
-          );
-        })}
-      </div>
+      <div style={{padding:"16px 16px 0"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}><div><div style={{fontSize:10,color:T.text3,fontFamily:"'DM Mono',monospace",marginBottom:3,letterSpacing:1.5,fontWeight:600}}>UNIT</div><div style={{fontSize:19,fontWeight:700,color:T.text}}>{house.name}</div></div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:24,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span><button onClick={e=>{e.stopPropagation();if(confirm(`Delete ${house.name}? This cannot be undone.`))onDelete();}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:20,minWidth:36,minHeight:44,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div></div><PBar p={p} color={pc}/>{open>0&&<div style={{marginTop:9,fontSize:12,color:T.danger,fontWeight:600}}>⚠ {open} open snag{open!==1?"s":""}</div>}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",marginTop:12,background:T.cardAlt}}>{ROOMS.map((r,i)=>{const rm=house.rooms[r];const o=rOpen(rm);const c=SC[rm.installStage]||T.text3;return(<div key={r} style={{padding:"10px 11px",borderTop:`1px solid ${T.border}`,borderRight:i<2?`1px solid ${T.border}`:"none"}}><div style={{fontSize:9,color:T.text3,textTransform:"uppercase",letterSpacing:.5,marginBottom:4,fontWeight:600}}>{r}</div><div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}><span style={{width:8,height:8,borderRadius:"50%",background:c,boxShadow:`0 0 0 2px ${c}33`,flexShrink:0}}/><span style={{fontSize:9,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1.4,fontWeight:600}}>{rm.installStage}</span></div>{o>0&&<div style={{fontSize:9,color:T.danger,fontWeight:600}}>{o} snag{o!==1?"s":""}</div>}{rm.installStage==="Finished"&&<div style={{fontSize:9,color:T.success,fontWeight:600}}>✓{finishKeys(rm).length?` ${finishKeys(rm).length}📷`:""}</div>}</div>);})}</div>
     </div>
   );
 }
@@ -682,46 +310,54 @@ function HouseCard({house,onSelect,onDelete}){
 // ── Settings Modal ─────────────────────────────────────────────────────────────
 function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
   const [proj,setProj]=useState(settings.project||"");
+  const [url,setUrl]=useState("");const [key,setKey]=useState("");
   const fileRef=useRef();
-
-  const handleImport=e=>{
-    const f=e.target.files[0];if(!f)return;
-    onImport(f);
-    e.target.value="";
-    onClose();
+  const handleImport=e=>{const f=e.target.files[0];if(!f)return;onImport(f);e.target.value="";onClose();};
+  const connectCloud=async()=>{
+    if(typeof window.supabase==='undefined'){alert("Supabase library didn't load. Check internet & refresh the page.");return;}
+    if(!url.trim()||!key.trim()){alert("Enter both the Project URL and the anon public key.");return;}
+    if(!initSupabase(url.trim(),key.trim())){alert("Couldn't initialise Supabase.");return;}
+    try{
+      const {error}=await sb.from('houses').select('id').limit(1);if(error)throw error;
+      const {data:existing}=await sb.from('houses').select('id');
+      if((!existing||existing.length===0)&&houses.length>0){
+        if(confirm(`Connected! Upload this device's ${houses.length} house(s) and photos to the cloud now?`)){
+          for(const h of houses)await sb.from('houses').upsert({id:h.id,data:h});
+          for(const h of houses)for(const r of ROOMS){const rm=h.rooms[r];for(const k of finishKeys(rm)){const p=LS.get(k);if(p)await sb.from('photos').upsert({key:k,data:p});}for(const s of rm.snags)for(const k of snagKeys(s)){const p=LS.get(k);if(p)await sb.from('photos').upsert({key:k,data:p});}}
+          await sb.from('meta').upsert({key:'settings',value:settings});
+        }
+      }
+      LS.set("tk-sb",JSON.stringify({url:url.trim(),key:key.trim()}));
+      alert("Cloud sync is ON. Reloading…");location.reload();
+    }catch(e){alert("Connection failed: "+(e.message||e)+"\n\nMake sure you ran the setup SQL (tables + access) in Supabase.");}
   };
-
+  const disconnectCloud=()=>{if(!confirm("Turn off cloud sync on this device? Your data stays, but stops syncing."))return;LS.del("tk-sb");location.reload();};
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}
-      onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"90vh",overflow:"auto",padding:24,paddingBottom:34,boxShadow:"0 -8px 32px rgba(15,23,42,.15)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <h2 style={{margin:0,fontSize:19,color:T.text,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>⚙ Settings</h2>
-          <button onClick={onClose} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:24,minWidth:36,minHeight:36}}>×</button>
-        </div>
-
-        <L c="Project / Development Name"/>
-        <input value={proj} onChange={e=>setProj(e.target.value)} placeholder="e.g. Athenry" style={{...II,marginBottom:14}}/>
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"92vh",overflow:"auto",padding:24,paddingBottom:34,boxShadow:"0 -8px 32px rgba(15,23,42,.15)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{margin:0,fontSize:19,color:T.text,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>⚙ Settings</h2><button onClick={onClose} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:24,minWidth:36,minHeight:36}}>×</button></div>
+        <L c="Project / Development Name"/><input value={proj} onChange={e=>setProj(e.target.value)} placeholder="e.g. Athenry" style={{...II,marginBottom:14}}/>
         <Btn v="primary" sx={{width:"100%",justifyContent:"center",display:"flex"}} onClick={()=>{onSaveSettings({...settings,project:proj});onClose();}}>Save</Btn>
-
         <div style={{height:1,background:T.border,margin:"22px 0"}}/>
-
-        <L c="Backup & Sync Between Devices"/>
-        <div style={{fontSize:12,color:T.text2,lineHeight:1.5,marginBottom:12,background:T.cardAlt,padding:12,borderRadius:9,border:`1px solid ${T.border}`}}>
-          <strong style={{color:T.text}}>How to sync phone ↔ PC:</strong><br/>
-          1. Tap <b>Export Backup</b> at the end of a site visit<br/>
-          2. AirDrop / email / save the JSON file to your PC<br/>
-          3. Open this tracker on your PC, tap <b>Import Backup</b><br/>
-          4. To send updates back, repeat from the device with newest changes
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-          <Btn v="success" onClick={()=>{exportBackup(houses,settings);}}>⬇ Export Backup</Btn>
-          <Btn v="danger" onClick={()=>fileRef.current?.click()}>⬆ Import Backup</Btn>
-        </div>
+        <L c="Cloud Sync (phone ↔ PC)"/>
+        {cloudReady?(
+          <div>
+            <div style={{background:T.success+"12",border:`1px solid ${T.success}55`,borderRadius:9,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>☁️</span><div><div style={{fontWeight:700,color:T.success,fontSize:14}}>Cloud sync is ON</div><div style={{fontSize:12,color:T.text2}}>This device syncs automatically with all others using the same Supabase project.</div></div></div>
+            <Btn sm onClick={disconnectCloud}>Disconnect cloud on this device</Btn>
+          </div>
+        ):(
+          <div>
+            <div style={{fontSize:12,color:T.text2,lineHeight:1.5,marginBottom:10,background:T.cardAlt,padding:12,borderRadius:9,border:`1px solid ${T.border}`}}>Enter your Supabase <b>Project URL</b> and <b>anon public key</b> (Settings → API in Supabase). Do this once on each device, using the <b>same</b> values.</div>
+            <L c="Project URL"/><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" style={{...II,marginBottom:10,fontFamily:"'DM Mono',monospace",fontSize:12}}/>
+            <L c="anon public key"/><textarea value={key} onChange={e=>setKey(e.target.value)} placeholder="eyJhbGciOiJ..." rows={3} style={{...II,marginBottom:10,fontFamily:"'DM Mono',monospace",fontSize:11,resize:"vertical"}}/>
+            <Btn v="primary" sx={{width:"100%",justifyContent:"center",display:"flex"}} onClick={connectCloud}>☁️ Connect Cloud Sync</Btn>
+          </div>
+        )}
+        <div style={{height:1,background:T.border,margin:"22px 0"}}/>
+        <L c="Manual Backup (always available)"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><Btn v="success" onClick={()=>exportBackup(houses,settings)}>⬇ Export Backup</Btn><Btn v="danger" onClick={()=>fileRef.current?.click()}>⬆ Import Backup</Btn></div>
         <input ref={fileRef} type="file" accept="application/json,.json" style={{display:"none"}} onChange={handleImport}/>
-        <div style={{fontSize:11,color:T.text3,marginTop:4}}>
-          Backup includes all houses, snags, notes, and photos. Importing <b>replaces</b> all current data on this device.
-        </div>
+        <div style={{fontSize:11,color:T.text3,marginTop:4}}>A JSON file with all houses, snags, notes & photos. A good safety net even with cloud sync on.</div>
       </div>
     </div>
   );
@@ -729,67 +365,26 @@ function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings}){
-  const [nm,setNm]=useState("");
-  const [filter,setFilter]=useState("all");
+  const [nm,setNm]=useState("");const [filter,setFilter]=useState("all");
   const sorted=sortHouses(houses);
-  const filtered=sorted.filter(h=>
-    filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
+  const filtered=sorted.filter(h=>filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
   const add=()=>{if(nm.trim()){onAdd(nm.trim());setNm("");}};
-  const tOpen=houses.reduce((n,h)=>n+totalOpen(h),0);
-  const tDone=houses.filter(h=>pct(h)===100).length;
-
+  const tOpen=houses.reduce((n,h)=>n+totalOpen(h),0);const tDone=houses.filter(h=>pct(h)===100).length;
   return(
     <div style={{minHeight:"100vh",background:T.bg}}>
       <div style={{background:`linear-gradient(180deg, ${T.card} 0%, ${T.cardAlt} 100%)`,borderBottom:`1px solid ${T.border}`,padding:"17px 16px 14px",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(15,23,42,.04)"}}>
         <div style={{maxWidth:960,margin:"0 auto"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:14}}>
-            <div>
-              <div style={{fontSize:11,color:T.primary,textTransform:"uppercase",letterSpacing:2,marginBottom:4,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{settings.project||"PROJECT"}</div>
-              <h1 style={{margin:0,fontSize:24,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,lineHeight:1.1}}>Kitchen Install Tracker</h1>
-            </div>
-            <div style={{display:"flex",gap:18,alignItems:"center"}}>
-              {[["Houses",houses.length,T.primary],["Done",tDone,T.success],["Snags",tOpen,tOpen>0?T.danger:T.success]].map(([l,v,c])=>(
-                <div key={l} style={{textAlign:"center"}}>
-                  <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div>
-                  <div style={{fontSize:10,color:T.text2,textTransform:"uppercase",marginTop:3,fontWeight:600,letterSpacing:.5}}>{l}</div>
-                </div>
-              ))}
-              <button onClick={onSettings} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:22,minHeight:44,minWidth:36,padding:4}}>⚙</button>
-            </div>
+            <div><div style={{fontSize:11,color:T.primary,textTransform:"uppercase",letterSpacing:2,marginBottom:4,fontFamily:"'DM Mono',monospace",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>{settings.project||"PROJECT"}<span style={{color:cloudReady?T.success:T.text3,fontSize:10}}>{cloudReady?"☁ synced":"📱 local"}</span></div><h1 style={{margin:0,fontSize:24,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,lineHeight:1.1}}>Kitchen Install Tracker</h1></div>
+            <div style={{display:"flex",gap:18,alignItems:"center"}}>{[["Houses",houses.length,T.primary],["Done",tDone,T.success],["Snags",tOpen,tOpen>0?T.danger:T.success]].map(([l,v,c])=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div><div style={{fontSize:10,color:T.text2,textTransform:"uppercase",marginTop:3,fontWeight:600,letterSpacing:.5}}>{l}</div></div>))}<button onClick={onSettings} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:22,minHeight:44,minWidth:36,padding:4}}>⚙</button></div>
           </div>
-          <div style={{display:"flex",gap:8}}>
-            <input value={nm} onChange={e=>setNm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
-              placeholder="Add house / plot number…"
-              style={{flex:1,background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:10,padding:"11px 14px",fontSize:14,outline:"none",minHeight:46}}/>
-            <Btn v="primary" onClick={add}>+ Add</Btn>
-          </div>
+          <div style={{display:"flex",gap:8}}><input value={nm} onChange={e=>setNm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add house / plot number…" style={{flex:1,background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:10,padding:"11px 14px",fontSize:14,outline:"none",minHeight:46}}/><Btn v="primary" onClick={add}>+ Add</Btn></div>
         </div>
       </div>
-
       <div style={{maxWidth:960,margin:"0 auto",padding:"14px 14px 50px"}}>
-        <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
-          {[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setFilter(v)} style={{
-              background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,
-              color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 14px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500
-            }}>{l}</button>
-          ))}
-        </div>
-        <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}>
-          <Btn sm onClick={()=>exportStatus(sorted)}>📊 Status Excel</Btn>
-          <Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn>
-          <Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn>
-        </div>
-
-        {filtered.length===0?(
-          <div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>
-            {houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}
-          </div>
-        ):(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>
-            {filtered.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}
-          </div>
-        )}
+        <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>{[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 14px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500}}>{l}</button>))}</div>
+        <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status Excel</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn></div>
+        {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>{filtered.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>)}
       </div>
     </div>
   );
@@ -799,31 +394,38 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings}){
 function App(){
   const [houses,setHouses]=useState(()=>loadH());
   const [settings,setSettings]=useState(()=>loadS());
-  const [sel,setSel]=useState(null);
+  const [selId,setSelId]=useState(null);
   const [showSet,setShowSet]=useState(false);
+
+  // Cloud: initial fetch + realtime + refetch-on-focus
+  useEffect(()=>{
+    if(!cloudReady||!sb)return;let active=true;
+    const reload=async()=>{
+      try{const {data}=await sb.from('houses').select('data');if(active&&data){const hs=data.map(r=>r.data);setHouses(hs);LS.set("tk4-h",JSON.stringify(hs));}}catch(e){console.error("houses fetch:",e);}
+      try{const {data}=await sb.from('meta').select('value').eq('key','settings').maybeSingle();if(active&&data&&data.value){setSettings(data.value);LS.set("tk4-s",JSON.stringify(data.value));}}catch(e){}
+    };
+    reload();
+    const ch=sb.channel('rt').on('postgres_changes',{event:'*',schema:'public',table:'houses'},reload).on('postgres_changes',{event:'*',schema:'public',table:'meta'},reload).subscribe();
+    const onFocus=()=>reload();window.addEventListener('focus',onFocus);
+    return()=>{active=false;try{sb.removeChannel(ch);}catch(e){}window.removeEventListener('focus',onFocus);};
+  },[]);
 
   useEffect(()=>{LS.set("tk4-h",JSON.stringify(houses));},[houses]);
   useEffect(()=>{LS.set("tk4-s",JSON.stringify(settings));},[settings]);
 
-  const addH=useCallback(name=>setHouses(hs=>[...hs,DH(name)]),[]);
-  const delH=useCallback(id=>{setHouses(hs=>hs.filter(h=>h.id!==id));setSel(s=>s?.id===id?null:s);},[]);
-  const updH=useCallback(u=>{setHouses(hs=>hs.map(h=>h.id===u.id?u:h));setSel(u);},[]);
+  const sel=selId?houses.find(h=>h.id===selId)||null:null;
+  const addH=useCallback(name=>{const h=DH(name);setHouses(hs=>[...hs,h]);if(cloudReady&&sb)sb.from('houses').upsert({id:h.id,data:h}).then(()=>{},e=>console.error(e));},[]);
+  const delH=useCallback(id=>{setHouses(hs=>hs.filter(h=>h.id!==id));setSelId(s=>s===id?null:s);if(cloudReady&&sb)sb.from('houses').delete().eq('id',id).then(()=>{},e=>console.error(e));},[]);
+  const updH=useCallback(u=>{setHouses(hs=>hs.map(h=>h.id===u.id?u:h));if(cloudReady&&sb)sb.from('houses').upsert({id:u.id,data:u}).then(()=>{},e=>console.error(e));},[]);
+  const saveSettings=useCallback(s=>{setSettings(s);if(cloudReady&&sb)sb.from('meta').upsert({key:'settings',value:s}).then(()=>{},e=>console.error(e));},[]);
   const handleImport=useCallback(file=>importBackup(file,setHouses,setSettings),[]);
-
   return(
     <>
-      {sel
-        ?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSel(null)}/>
-        :<Dashboard houses={houses} onSelect={setSel} onAdd={addH} onDelete={delH} settings={settings} onSettings={()=>setShowSet(true)}/>
-      }
-      {showSet&&<SettingsModal settings={settings} houses={houses}
-        onSaveSettings={setSettings}
-        onImport={handleImport}
-        onClose={()=>setShowSet(false)}/>}
+      {sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>:<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} settings={settings} onSettings={()=>setShowSet(true)}/>}
+      {showSet&&<SettingsModal settings={settings} houses={houses} onSaveSettings={saveSettings} onImport={handleImport} onClose={()=>setShowSet(false)}/>}
     </>
   );
 }
-
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
