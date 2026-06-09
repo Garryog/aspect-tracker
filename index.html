@@ -40,11 +40,11 @@ const {useState,useEffect,useCallback,useRef}=React;
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STAGES=["Not Started","Site Ready","Delivered","Installed","Installed with Snags","Finished"];
 const ROOMS=["Kitchen","Wardrobe","Utility"];
-const SNAG_TYPES=[{code:"SNAG_BSAW",label:"Band Saw Issue",panel:true,excess:false},{code:"SNAG_CNC",label:"CNC Issue",panel:true,excess:false},{code:"SNAG_COMP",label:"Component Issue",panel:false,excess:false},{code:"MISSING",label:"Missing from Delivery",panel:false,excess:false},{code:"WRONG_HOUSE",label:"Wrong House Delivery",panel:false,excess:false},{code:"EXCESS_MAT",label:"Excess Material Delivered",panel:false,excess:true}];
+const SNAG_TYPES=[{code:"MISSING",label:"Missing from Delivery",excess:false},{code:"WRONG_HOUSE",label:"Wrong House Delivery",excess:false},{code:"EXCESS_MAT",label:"Excess Material Delivered",excess:true},{code:"SITE_DAMAGE",label:"Site Damage",excess:false},{code:"FITTING",label:"Fitting Issue",excess:false}];
 const MATS=["Bardolino L1LE","Bardolino L4E","Taupe Grey PM MFC L1LE","Taupe Grey PM MFC L4E","Cashmere PM MFC L1LE","Cashmere PM MFC L4E","MDF Raw"];
 const UNITS=["sheets","pieces","packs","boards","doors","panels","other"];
 const SC={"Not Started":"#94a3b8","Site Ready":"#10b981","Delivered":"#06b6d4","Installed":"#3b82f6","Installed with Snags":"#f59e0b","Finished":"#16a34a"};
-const TC={SNAG_BSAW:"#f59e0b",SNAG_CNC:"#8b5cf6",SNAG_COMP:"#3b82f6",MISSING:"#ef4444",WRONG_HOUSE:"#ec4899",EXCESS_MAT:"#f97316"};
+const TC={MISSING:"#ef4444",WRONG_HOUSE:"#ec4899",EXCESS_MAT:"#f97316",SITE_DAMAGE:"#dc2626",FITTING:"#0ea5e9",SNAG_BSAW:"#f59e0b",SNAG_CNC:"#8b5cf6",SNAG_COMP:"#3b82f6"};
 const XLSX_HEADERS=["Qty","Plot","Hs.  Num.","Product","Name","Description","Price","CHILDREN 1 QTY","CHILDREN 1 PRODUCT","CHILDREN 1 NAME","CHILDREN 1 DESCRIPTION","CHILDREN 1 PRICE","CHILDREN 2 QTY","CHILDREN 2 PRODUCT","CHILDREN 2 NAME","CHILDREN 2 DESCRIPTION","CHILDREN 2 PRICE","CHILDREN 3 QTY","CHILDREN 3 PRODUCT","CHILDREN 3 NAME","CHILDREN 3 DESCRIPTION","CHILDREN 3 PRICE","CHILDREN 4 QTY","CHILDREN 4 PRODUCT","CHILDREN 4 NAME","CHILDREN 4 DESCRIPTION","CHILDREN 4 PRICE"];
 const T={bg:"#f1f5f9",card:"#ffffff",cardAlt:"#f8fafc",border:"#e2e8f0",borderStrong:"#cbd5e1",text:"#0f172a",text2:"#475569",text3:"#94a3b8",text4:"#cbd5e1",primary:"#3b82f6",danger:"#ef4444",success:"#16a34a"};
 
@@ -112,10 +112,11 @@ const importBackup=(file,applyHouses,applySettings)=>{
 const exportSnags=(houses,project)=>{
   const empty=Array(20).fill("");const rows=[XLSX_HEADERS];let found=false;
   houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.filter(s=>!s.resolved).forEach(s=>{found=true;let qty=1,name="",desc="";
-    if(s.type==="SNAG_BSAW"||s.type==="SNAG_CNC"){name=s.description||"";desc=[s.material||"",s.height?`H:${s.height}`:"",s.width?`W:${s.width}`:""].filter(Boolean).join(" + ");}
-    else if(s.type==="WRONG_HOUSE"){name=s.description||"Wrong house delivery";desc=`Correct house: ${s.correctHouse||"unknown"}`;}
+    if(s.type==="WRONG_HOUSE"){name=s.description||"Wrong house delivery";desc=`Correct house: ${s.correctHouse||"unknown"}`;}
     else if(s.type==="EXCESS_MAT"){qty=parseInt(s.quantity)||1;name=s.description||"Excess material delivered";desc=[s.material||"",s.quantity?`Qty:${s.quantity} ${s.unit||""}`:""].filter(Boolean).join(" + ");}
     else{name=s.description||"";desc="";}
+    if(s.location)desc=desc?`${desc} | Location: ${s.location}`:`Location: ${s.location}`;
+    else if(room)desc=desc?`${desc} | Location: ${room}`:`Location: ${room}`;
     rows.push([qty,project||"Athenry",h.name,s.type,name,desc,"",...empty]);})));
   if(!found){alert("No open snags to export.");return;}
   const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:14},{wch:30},{wch:40},{wch:8},...Array(20).fill({wch:15})];
@@ -140,7 +141,7 @@ const exportPDF=async(houses,project)=>{
     for(const s of hsnags){const keys=snagKeys(s);space(30);const st=SNAG_TYPES.find(t=>t.code===s.type);
       doc.setFontSize(10).setFont(undefined,'bold');const hx=(TC[s.type]||"#646464").replace('#','');doc.setTextColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));doc.text(`${s.room} • ${st?.label||s.type}`,M+2,y);
       doc.setTextColor(120,120,120).setFont(undefined,'normal').setFontSize(9);doc.text(`Logged: ${new Date(s.loggedAt).toLocaleString('en-IE')}`,pageW-M-2,y,{align:'right'});y+=5;
-      doc.setFontSize(10).setTextColor(40,40,40);const lines=[];if(s.material)lines.push(`Material: ${s.material}`);const dim=[s.height?`H:${s.height}mm`:"",s.width?`W:${s.width}mm`:""].filter(Boolean).join("  ");if(dim)lines.push(`Size: ${dim}`);if(s.quantity)lines.push(`Quantity: ${s.quantity} ${s.unit||""}`);if(s.correctHouse)lines.push(`Correct house: ${s.correctHouse}`);if(s.description)doc.splitTextToSize(s.description,pageW-2*M-5).forEach(w=>lines.push(w));
+      doc.setFontSize(10).setTextColor(40,40,40);const lines=[];if(s.location)lines.push(`Location: ${s.location}`);if(s.material)lines.push(`Material: ${s.material}`);const dim=[s.height?`H:${s.height}mm`:"",s.width?`W:${s.width}mm`:""].filter(Boolean).join("  ");if(dim)lines.push(`Size: ${dim}`);if(s.quantity)lines.push(`Quantity: ${s.quantity} ${s.unit||""}`);if(s.correctHouse)lines.push(`Correct house: ${s.correctHouse}`);if(s.description)doc.splitTextToSize(s.description,pageW-2*M-5).forEach(w=>lines.push(w));
       lines.forEach(line=>{doc.splitTextToSize(line,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});});
       if(keys.length){const iw=55,ih=41,gap=4;let x=M+2;y+=2;for(const k of keys){const photo=await getP(k);if(!photo)continue;if(x+iw>pageW-M){x=M+2;y+=ih+gap;}if(y+ih>pageH-M){doc.addPage();y=M;x=M+2;}try{doc.addImage(photo,'JPEG',x,y,iw,ih);}catch(e){}x+=iw+gap;}y+=ih+4;}
       doc.setDrawColor(230,230,230);doc.line(M,y+1,pageW-M,y+1);y+=6;}
@@ -178,7 +179,7 @@ function AddPhotoTile({onAdd,size=110,label="Add"}){
 
 // ── Snag Form (add or edit, multi-photo) ─────────────────────────────────────────
 function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 Log New Snag"}){
-  const [f,sf]=useState(()=>initial||{type:"SNAG_BSAW",material:MATS[0],height:"",width:"",description:"",correctHouse:"",quantity:"",unit:"sheets",photos:[]});
+  const [f,sf]=useState(()=>initial||{type:"MISSING",material:MATS[0],description:"",correctHouse:"",quantity:"",unit:"sheets",photos:[]});
   const sel=SNAG_TYPES.find(t=>t.code===f.type);const set=p=>sf(x=>({...x,...p}));
   const addPhoto=dataUrl=>set({photos:[...(f.photos||[]),{dataUrl,key:null}]});
   const removePhoto=i=>set({photos:(f.photos||[]).filter((_,idx)=>idx!==i)});
@@ -186,9 +187,6 @@ function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 
     <div style={{background:T.cardAlt,border:`1px solid ${T.borderStrong}`,borderRadius:12,padding:16,marginBottom:12}}>
       <div style={{fontWeight:700,fontSize:15,color:T.text,marginBottom:14}}>{title}</div>
       <div style={{marginBottom:12}}><L c="Issue Type"/><select value={f.type} onChange={e=>set({type:e.target.value})} style={{...II,background:"#fff"}}>{SNAG_TYPES.map(t=><option key={t.code} value={t.code}>{t.label}</option>)}</select></div>
-      {sel?.panel&&<>
-        <div style={{marginBottom:12}}><L c="Material / Board Type"/><select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>{MATS.map(m=><option key={m}>{m}</option>)}</select></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}><div><L c="Height (mm)"/><input type="number" inputMode="numeric" placeholder="720" value={f.height||""} onChange={e=>set({height:e.target.value})} style={{...II,background:"#fff"}}/></div><div><L c="Width (mm)"/><input type="number" inputMode="numeric" placeholder="600" value={f.width||""} onChange={e=>set({width:e.target.value})} style={{...II,background:"#fff"}}/></div></div></>}
       {sel?.excess&&<>
         <div style={{marginBottom:12}}><L c="Material"/><select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>{MATS.map(m=><option key={m}>{m}</option>)}</select></div>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:12}}><div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity||""} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div><div><L c="Unit"/><select value={f.unit||"sheets"} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div></div></>}
@@ -206,21 +204,26 @@ function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 
 }
 
 // ── Snag Item (multi-photo) ──────────────────────────────────────────────────────
-function SnagItem({snag,onToggle,onDelete,onEdit}){
+function SnagItem({snag,room,onToggle,onDelete,onEdit}){
   const [exp,setExp]=useState(false);const t=SNAG_TYPES.find(x=>x.code===snag.type);const c=TC[snag.type]||T.text3;
   const keys=snagKeys(snag);
+  const loc=snag.location||room||"";
   const summary=snag.description?(snag.description.length>55?snag.description.slice(0,55)+"…":snag.description):snag.material?[snag.material,snag.height&&`H:${snag.height}mm`,snag.width&&`W:${snag.width}mm`,snag.quantity&&`×${snag.quantity} ${snag.unit||""}`].filter(Boolean).join(" "):"—";
   return(
     <div style={{border:`1px solid ${snag.resolved?T.border:c+"55"}`,borderRadius:11,marginBottom:8,overflow:"hidden",background:snag.resolved?T.cardAlt:"#fff"}}>
       <div style={{padding:"11px 12px",display:"flex",alignItems:"center",gap:9,cursor:"pointer",minHeight:54}} onClick={()=>setExp(e=>!e)}>
         <button onClick={e=>{e.stopPropagation();onToggle();}} style={{background:snag.resolved?T.success+"22":T.danger+"22",border:`1px solid ${snag.resolved?T.success+"77":T.danger+"77"}`,color:snag.resolved?T.success:T.danger,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:10,fontFamily:"'DM Mono',monospace",fontWeight:600,whiteSpace:"nowrap",flexShrink:0,minHeight:34}}>{snag.resolved?"DONE":"OPEN"}</button>
-        <span style={{fontSize:10,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace",flexShrink:0,minWidth:68}}>{(t?.label||"").split(" ").slice(0,2).join(" ")}</span>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,flexShrink:0,minWidth:74}}>
+          {loc&&<span style={{fontSize:9,fontWeight:700,color:T.text2,background:T.cardAlt,border:`1px solid ${T.border}`,padding:"1px 6px",borderRadius:5,letterSpacing:.5,textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>📍 {loc}</span>}
+          <span style={{fontSize:10,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}}>{(t?.label||snag.type||"").split(" ").slice(0,2).join(" ")}</span>
+        </div>
         <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:snag.resolved?T.text3:T.text,textDecoration:snag.resolved?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{summary}</div><div style={{fontSize:10,color:T.text3,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{fmtDate(snag.loggedAt)}</div></div>
         {keys.length>0&&<span style={{flexShrink:0,fontSize:13,color:T.text2}}>📷{keys.length>1?keys.length:""}</span>}
         <span style={{color:T.text3,fontSize:11,flexShrink:0}}>{exp?"▲":"▼"}</span>
       </div>
       {exp&&(
         <div style={{padding:"10px 14px 14px",borderTop:`1px solid ${T.border}`,background:T.cardAlt}}>
+          {loc&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>📍 Location: <span style={{color:T.text,fontWeight:600}}>{loc}</span></div>}
           {snag.material&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>Material: <span style={{color:T.text,fontWeight:500}}>{snag.material}</span></div>}
           {(snag.height||snag.width)&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>{snag.height&&<>H: <span style={{color:T.text,fontWeight:500}}>{snag.height}mm  </span></>}{snag.width&&<>W: <span style={{color:T.text,fontWeight:500}}>{snag.width}mm</span></>}</div>}
           {snag.quantity&&<div style={{fontSize:13,color:"#f97316",marginBottom:4,fontWeight:600}}>Qty: {snag.quantity} {snag.unit||""}</div>}
@@ -243,13 +246,13 @@ function RoomPanel({houseId,room,rd,onUpdate}){
   const fk=finishKeys(rd);
   const addFinishPhoto=async dataUrl=>{const k=`ph:fin:${uid()}`;await saveP(k,dataUrl);upd({...rd,finishPhotoKeys:[...finishKeys(rd),k],lastInspection:new Date().toISOString()});};
   const removeFinishPhoto=async k=>{await delP(k);upd({...rd,finishPhotoKeys:finishKeys(rd).filter(x=>x!==k)});};
-  const submitNew=async fd=>{const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:[...rd.snags,{...rest,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKeys}]});setShowAdd(false);};
+  const submitNew=async fd=>{const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:[...rd.snags,{...rest,location:room,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKeys}]});setShowAdd(false);};
   const startEdit=async snag=>{const keys=snagKeys(snag);const photos=[];for(const k of keys){const d=await getP(k);if(d)photos.push({dataUrl:d,key:k});}setEditing({snagId:snag.id,initial:{type:snag.type,material:snag.material||MATS[0],height:snag.height||"",width:snag.width||"",description:snag.description||"",correctHouse:snag.correctHouse||"",quantity:snag.quantity||"",unit:snag.unit||"sheets",photos}});setShowAdd(false);};
-  const submitEdit=async fd=>{const old=rd.snags.find(s=>s.id===editing.snagId);if(!old){setEditing(null);return;}const oldKeys=snagKeys(old);const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}for(const k of oldKeys)if(!photoKeys.includes(k))delP(k);const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,photoKeys,photoKey:undefined,editedAt:new Date().toISOString()}:s)});setEditing(null);};
+  const submitEdit=async fd=>{const old=rd.snags.find(s=>s.id===editing.snagId);if(!old){setEditing(null);return;}const oldKeys=snagKeys(old);const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}for(const k of oldKeys)if(!photoKeys.includes(k))delP(k);const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,location:room,photoKeys,photoKey:undefined,editedAt:new Date().toISOString()}:s)});setEditing(null);};
   const tog=id=>upd({...rd,snags:rd.snags.map(s=>s.id===id?{...s,resolved:!s.resolved,resolvedAt:!s.resolved?new Date().toISOString():null}:s)});
   const del=id=>{const s=rd.snags.find(x=>x.id===id);snagKeys(s||{}).forEach(delP);upd({...rd,snags:rd.snags.filter(x=>x.id!==id)});};
   const open=rOpen(rd);
-  const renderSnag=s=>editing?.snagId===s.id?<SnagForm key={s.id} initial={editing.initial} onSubmit={submitEdit} onCancel={()=>setEditing(null)} submitLabel="Save Changes" title="✏️ Edit Snag"/>:<SnagItem key={s.id} snag={s} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)} onEdit={()=>startEdit(s)}/>;
+  const renderSnag=s=>editing?.snagId===s.id?<SnagForm key={s.id} initial={editing.initial} onSubmit={submitEdit} onCancel={()=>setEditing(null)} submitLabel="Save Changes" title="✏️ Edit Snag"/>:<SnagItem key={s.id} snag={s} room={room} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)} onEdit={()=>startEdit(s)}/>;
   return(
     <div>
       <Card>
@@ -291,7 +294,7 @@ function HouseDetail({house,onUpdate,onBack}){
         <PBar p={p} color={pc} h={5}/>
         <div style={{display:"flex",marginTop:10}}>{ROOMS.map(r=>{const o=rOpen(house.rooms[r]);return(<button key={r} onClick={()=>setAr(r)} style={{flex:1,padding:"11px 5px",background:"none",border:"none",borderBottom:ar===r?`3px solid ${T.primary}`:"3px solid transparent",color:ar===r?T.primary:T.text2,cursor:"pointer",fontSize:14,fontWeight:ar===r?700:500,minHeight:48}}>{r}{o>0&&<span style={{background:T.danger,color:"#fff",borderRadius:99,fontSize:10,padding:"2px 7px",marginLeft:6,fontWeight:700}}>{o}</span>}</button>);})}</div>
       </div>
-      <div style={{padding:"15px 14px 70px",maxWidth:700,margin:"0 auto"}}><RoomPanel key={ar} houseId={house.id} room={ar} rd={house.rooms[ar]} onUpdate={upd=>onUpdate({...house,rooms:{...house.rooms,[ar]:upd}})}/></div>
+      <div style={{padding:"15px 14px",paddingBottom:"calc(90px + env(safe-area-inset-bottom))",maxWidth:700,margin:"0 auto"}}><RoomPanel key={ar} houseId={house.id} room={ar} rd={house.rooms[ar]} onUpdate={upd=>onUpdate({...house,rooms:{...house.rooms,[ar]:upd}})}/></div>
     </div>
   );
 }
@@ -368,6 +371,10 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr})
   const [nm,setNm]=useState("");const [filter,setFilter]=useState("all");
   const sorted=sortHouses(houses);
   const filtered=sorted.filter(h=>filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
+  const isAll=filter==="all";
+  const compHouses=isAll?filtered.filter(h=>pct(h)===100):[];
+  const mainHouses=isAll&&compHouses.length>0?filtered.filter(h=>pct(h)<100):filtered;
+  const showSplit=isAll&&compHouses.length>0;
   const add=()=>{if(nm.trim()){onAdd(nm.trim());setNm("");}};
   const tOpen=houses.reduce((n,h)=>n+totalOpen(h),0);const tDone=houses.filter(h=>pct(h)===100).length;
   return(
@@ -384,7 +391,16 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr})
       <div style={{maxWidth:960,margin:"0 auto",padding:"14px 14px 50px"}}>
         <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>{[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 14px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500}}>{l}</button>))}</div>
         <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status Excel</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn></div>
-        {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>{filtered.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>)}
+        {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<>
+          {mainHouses.length>0&&<>
+            {showSplit&&(<div style={{display:"flex",alignItems:"center",gap:8,marginTop:4,marginBottom:12,fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700}}><span>In Progress</span><span style={{background:T.primary+"18",color:T.primary,padding:"2px 9px",borderRadius:99,fontSize:11,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{mainHouses.length}</span><div style={{flex:1,height:1,background:T.border,marginLeft:4}}/></div>)}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>{mainHouses.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>
+          </>}
+          {compHouses.length>0&&<>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:mainHouses.length>0?26:4,marginBottom:12,fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700}}><span>✓ Completed</span><span style={{background:T.success+"18",color:T.success,padding:"2px 9px",borderRadius:99,fontSize:11,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{compHouses.length}</span><div style={{flex:1,height:1,background:T.border,marginLeft:4}}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>{compHouses.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>
+          </>}
+        </>)}
       </div>
     </div>
   );
