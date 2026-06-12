@@ -367,7 +367,36 @@ function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
-function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr}){
+// ── Excess Material List (top of dashboard) ────────────────────────────────────
+function ExcessMaterialList({houses,onUpdateHouse}){
+  const items=[];
+  houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.forEach(s=>{if(s.type==="EXCESS_MAT"&&!s.resolved)items.push({house:h,room,snag:s});})));
+  if(items.length===0)return null;
+  const updateNote=(houseId,room,snagId,note)=>{const h=houses.find(x=>x.id===houseId);if(!h)return;onUpdateHouse({...h,rooms:{...h.rooms,[room]:{...h.rooms[room],snags:h.rooms[room].snags.map(s=>s.id===snagId?{...s,reuseNote:note}:s)}}});};
+  const markUsed=(houseId,room,snagId)=>{const h=houses.find(x=>x.id===houseId);if(!h)return;onUpdateHouse({...h,rooms:{...h.rooms,[room]:{...h.rooms[room],snags:h.rooms[room].snags.map(s=>s.id===snagId?{...s,resolved:true,resolvedAt:new Date().toISOString()}:s)}}});};
+  return(
+    <details open style={{background:"#fff",border:`1px solid #fb923c`,borderRadius:12,marginBottom:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(15,23,42,.04)"}}>
+      <summary style={{padding:"12px 16px",background:"#fff7ed",color:"#9a3412",fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8,userSelect:"none"}}>
+        <span>📦 Excess Material — Available for Reuse</span>
+        <span style={{background:"#f97316",color:"#fff",borderRadius:99,padding:"1px 9px",fontSize:11,marginLeft:"auto"}}>{items.length}</span>
+        <span style={{color:"#9a3412",fontSize:11,marginLeft:6}}>▾</span>
+      </summary>
+      <div style={{padding:12}}>
+        {items.map(it=>(
+          <div key={it.snag.id} style={{display:"flex",alignItems:"center",gap:8,background:T.cardAlt,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 10px",marginBottom:6,flexWrap:"wrap"}}>
+            <span style={{fontSize:12,color:T.text,fontWeight:700,whiteSpace:"nowrap"}}>{it.house.name}</span>
+            {it.snag.material&&<span style={{fontSize:12,color:T.text2,whiteSpace:"nowrap"}} title={it.snag.material}>{it.snag.material}</span>}
+            {it.snag.description&&<span style={{fontSize:12,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:"1 1 auto"}} title={it.snag.description}>{it.snag.description}</span>}
+            <input placeholder="reuse at…" value={it.snag.reuseNote||""} title={it.snag.reuseNote||"Hover or click to read full note. Type where this material will be reused."} onChange={e=>updateNote(it.house.id,it.room,it.snag.id,e.target.value)} style={{flex:"0 0 110px",width:110,background:"#fff",border:`1px solid ${T.borderStrong}`,borderRadius:6,padding:"5px 9px",fontSize:12,minHeight:32,outline:"none",color:T.text,textOverflow:"ellipsis"}}/>
+            <button onClick={()=>{if(confirm("Mark this excess material as used?"))markUsed(it.house.id,it.room,it.snag.id);}} title="Mark used" style={{background:T.success+"15",border:`1px solid ${T.success}66`,color:T.success,borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:14,fontWeight:700,minHeight:32,flexShrink:0}}>✓</button>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr,onUpdate}){
   const [nm,setNm]=useState("");const [filter,setFilter]=useState("all");
   const sorted=sortHouses(houses);
   const filtered=sorted.filter(h=>filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
@@ -389,6 +418,7 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr})
         </div>
       </div>
       <div style={{maxWidth:960,margin:"0 auto",padding:"14px 14px 50px"}}>
+        <ExcessMaterialList houses={sorted} onUpdateHouse={onUpdate}/>
         <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>{[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 14px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500}}>{l}</button>))}</div>
         <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status Excel</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn></div>
         {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<>
@@ -449,7 +479,7 @@ function App(){
   const handleImport=useCallback(file=>importBackup(file,setHouses,setSettings),[]);
   return(
     <>
-      {sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>:<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} settings={settings} onSettings={()=>setShowSet(true)} syncErr={syncErr}/>}
+      {sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>:<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} onUpdate={updH} settings={settings} onSettings={()=>setShowSet(true)} syncErr={syncErr}/>}
       {showSet&&<SettingsModal settings={settings} houses={houses} onSaveSettings={saveSettings} onImport={handleImport} onClose={()=>setShowSet(false)}/>}
     </>
   );
