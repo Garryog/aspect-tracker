@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#3b82f6">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -17,8 +17,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+html,body{overflow-x:hidden;max-width:100vw}
 body{background:#f1f5f9;font-family:'DM Sans',sans-serif;color:#0f172a;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
 input,select,textarea,button{font-family:inherit;color:inherit}
+input,select,textarea{font-size:16px !important}
 input:focus,select:focus,textarea:focus{border-color:#3b82f6 !important;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#e2e8f0}::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:3px}
 details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}
@@ -36,17 +39,25 @@ details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-
 </script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useCallback,useRef}=React;
+const APP_VER="2.0";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STAGES=["Not Started","Site Ready","Delivered","Installed","Installed with Snags","Finished"];
 const ROOMS=["Kitchen","Wardrobe","Utility"];
-const SNAG_TYPES=[{code:"MISSING",label:"Missing from Delivery",excess:false},{code:"WRONG_HOUSE",label:"Wrong House Delivery",excess:false},{code:"EXCESS_MAT",label:"Excess Material Delivered",excess:true},{code:"SITE_DAMAGE",label:"Site Damage",excess:false},{code:"FITTING",label:"Fitting Issue",excess:false}];
+const SNAG_TYPES=[
+  {code:"MISSING",label:"Missing / Short Delivery",qty:true},
+  {code:"WRONG_HOUSE",label:"Wrong Location Delivery"},
+  {code:"EXCESS_MAT",label:"Excess Material Delivered",qty:true},
+  {code:"SITE_DAMAGE",label:"Site Damage"},
+  {code:"FITTING",label:"Fitting Issue"}
+];
 const MATS=["Bardolino L1LE","Bardolino L4E","Taupe Grey PM MFC L1LE","Taupe Grey PM MFC L4E","Cashmere PM MFC L1LE","Cashmere PM MFC L4E","MDF Raw"];
-const UNITS=["sheets","pieces","packs","boards","doors","panels","other"];
+const UNITS=["sheets","pieces","packs","boards","doors","panels","units","other"];
 const SC={"Not Started":"#94a3b8","Site Ready":"#10b981","Delivered":"#06b6d4","Installed":"#3b82f6","Installed with Snags":"#f59e0b","Finished":"#16a34a"};
 const TC={MISSING:"#ef4444",WRONG_HOUSE:"#ec4899",EXCESS_MAT:"#f97316",SITE_DAMAGE:"#dc2626",FITTING:"#0ea5e9",SNAG_BSAW:"#f59e0b",SNAG_CNC:"#8b5cf6",SNAG_COMP:"#3b82f6"};
+const OLD_LABELS={SNAG_BSAW:"Band Saw Issue",SNAG_CNC:"CNC Issue",SNAG_COMP:"Component Issue"};
 const XLSX_HEADERS=["Qty","Plot","Hs.  Num.","Product","Name","Description","Price","CHILDREN 1 QTY","CHILDREN 1 PRODUCT","CHILDREN 1 NAME","CHILDREN 1 DESCRIPTION","CHILDREN 1 PRICE","CHILDREN 2 QTY","CHILDREN 2 PRODUCT","CHILDREN 2 NAME","CHILDREN 2 DESCRIPTION","CHILDREN 2 PRICE","CHILDREN 3 QTY","CHILDREN 3 PRODUCT","CHILDREN 3 NAME","CHILDREN 3 DESCRIPTION","CHILDREN 3 PRICE","CHILDREN 4 QTY","CHILDREN 4 PRODUCT","CHILDREN 4 NAME","CHILDREN 4 DESCRIPTION","CHILDREN 4 PRICE"];
-const T={bg:"#f1f5f9",card:"#ffffff",cardAlt:"#f8fafc",border:"#e2e8f0",borderStrong:"#cbd5e1",text:"#0f172a",text2:"#475569",text3:"#94a3b8",text4:"#cbd5e1",primary:"#3b82f6",danger:"#ef4444",success:"#16a34a"};
+const T={bg:"#f1f5f9",card:"#ffffff",cardAlt:"#f8fafc",border:"#e2e8f0",borderStrong:"#cbd5e1",text:"#0f172a",text2:"#475569",text3:"#94a3b8",primary:"#3b82f6",danger:"#ef4444",success:"#16a34a",orange:"#f97316"};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmtDate=iso=>iso?new Date(iso).toLocaleString("en-IE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
@@ -60,31 +71,31 @@ const totalOpen=h=>ROOMS.reduce((n,r)=>n+h.rooms[r].snags.filter(s=>!s.resolved)
 const rOpen=r=>r.snags.filter(s=>!s.resolved).length;
 const pColor=p=>p===100?T.success:p>60?T.primary:p>20?"#f59e0b":T.text3;
 const sortHouses=hs=>[...hs].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'}));
-// Backwards-compat photo key readers (handle old single-photo data)
 const snagKeys=s=>Array.isArray(s.photoKeys)?s.photoKeys:s.photoKey?[s.photoKey]:[];
 const finishKeys=r=>Array.isArray(r.finishPhotoKeys)?r.finishPhotoKeys:r.finishPhotoKey?[r.finishPhotoKey]:[];
+const typeLabel=s=>{const t=SNAG_TYPES.find(x=>x.code===s.type);return t?t.label:(OLD_LABELS[s.type]||s.type);};
+// Material display rule: excess always shows; other types only when explicitly chosen (fixes old default-material bug)
+const matOf=s=>s.type==="EXCESS_MAT"?(s.material||""):(s.matChosen?(s.material||""):"");
+const collectType=(houses,type)=>{const out=[];sortHouses(houses).forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.forEach(s=>{if(s.type===type&&!s.resolved)out.push({house:h,room,snag:s});})));return out;};
 
 // ── Local storage ──────────────────────────────────────────────────────────────
 const LS={get:k=>{try{return localStorage.getItem(k);}catch{return null;}},set:(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(e){return false;}},del:k=>{try{localStorage.removeItem(k);}catch{}}};
 const loadH=()=>{try{const d=LS.get("tk4-h");return d?JSON.parse(d):[];}catch{return [];}};
 const loadS=()=>{try{const d=LS.get("tk4-s");return d?JSON.parse(d):{project:"Athenry"};}catch{return {project:"Athenry"};}};
 
-// ── Supabase / Cloud ───────────────────────────────────────────────────────────
+// ── Supabase ───────────────────────────────────────────────────────────────────
 let sb=null, cloudReady=false;
-const initSupabase=(url,key)=>{
-  if(typeof window.supabase==='undefined'||!window.supabase.createClient)return false;
-  try{sb=window.supabase.createClient(url,key);return true;}catch(e){console.error("SB init:",e);return false;}
-};
+const initSupabase=(url,key)=>{if(typeof window.supabase==='undefined'||!window.supabase.createClient)return false;try{sb=window.supabase.createClient(url,key);return true;}catch(e){console.error("SB init:",e);return false;}};
 const storedSb=(()=>{try{const d=LS.get("tk-sb");return d?JSON.parse(d):null;}catch{return null;}})();
 if(storedSb&&storedSb.url&&storedSb.key)cloudReady=initSupabase(storedSb.url,storedSb.key);
 
-// ── Photo (localStorage cache + Supabase) ────────────────────────────────────────
+// ── Photos (stamped, cached, cloud) ─────────────────────────────────────────────
 const compress=(dataUrl,stampText,max=1000,q=0.72)=>new Promise(res=>{const img=new Image();img.onload=()=>{const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=~~(img.width*sc);c.height=~~(img.height*sc);const ctx=c.getContext('2d');ctx.drawImage(img,0,0,c.width,c.height);if(stampText){const fs=Math.max(13,Math.round(c.width*0.034));ctx.font=`bold ${fs}px sans-serif`;const pad=Math.round(fs*0.5);const tw=ctx.measureText(stampText).width;const bh=fs+pad*2;ctx.fillStyle="rgba(0,0,0,0.58)";ctx.fillRect(0,c.height-bh,tw+pad*2,bh);ctx.fillStyle="#fff";ctx.textBaseline="middle";ctx.fillText(stampText,pad,c.height-bh/2+1);}res(c.toDataURL('image/jpeg',q));};img.src=dataUrl;});
 const saveP=async(key,dataUrl)=>{const stamp=new Date().toLocaleString("en-IE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});const c=await compress(dataUrl,stamp);LS.set(key,c);if(cloudReady&&sb){try{await sb.from('photos').upsert({key,data:c});}catch(e){console.error("photo save:",e);}}return true;};
 const getP=async key=>{if(!key)return null;const local=LS.get(key);if(local)return local;if(cloudReady&&sb){try{const{data}=await sb.from('photos').select('data').eq('key',key).maybeSingle();if(data&&data.data){LS.set(key,data.data);return data.data;}}catch(e){console.error("photo get:",e);}}return null;};
 const delP=async key=>{if(!key)return;LS.del(key);if(cloudReady&&sb){try{await sb.from('photos').delete().eq('key',key);}catch(e){}}};
 
-// ── JSON Backup / Restore ──────────────────────────────────────────────────────
+// ── Backup ─────────────────────────────────────────────────────────────────────
 const exportBackup=async(houses,settings)=>{
   const sorted=sortHouses(houses);const photos={};
   for(const h of sorted)for(const r of ROOMS){const rm=h.rooms[r];
@@ -108,25 +119,25 @@ const importBackup=(file,applyHouses,applySettings)=>{
   reader.readAsText(file);
 };
 
-// ── XLSX / PDF Exports ─────────────────────────────────────────────────────────
-const exportSnags=(houses,project)=>{
-  const empty=Array(20).fill("");const rows=[XLSX_HEADERS];let found=false;
-  houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.filter(s=>!s.resolved).forEach(s=>{found=true;let qty=1,name="",desc="";
-    if(s.type==="WRONG_HOUSE"){name=s.description||"Wrong house delivery";desc=`Correct house: ${s.correctHouse||"unknown"}`;}
-    else if(s.type==="EXCESS_MAT"){qty=parseInt(s.quantity)||1;name=s.description||"Excess material delivered";desc=[s.material||"",s.quantity?`Qty:${s.quantity} ${s.unit||""}`:""].filter(Boolean).join(" + ");}
-    else{name=s.description||"";desc="";}
-    if(s.location)desc=desc?`${desc} | Location: ${s.location}`:`Location: ${s.location}`;
-    else if(room)desc=desc?`${desc} | Location: ${room}`:`Location: ${room}`;
-    rows.push([qty,project||"Athenry",h.name,s.type,name,desc,"",...empty]);})));
-  if(!found){alert("No open snags to export.");return;}
-  const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:14},{wch:30},{wch:40},{wch:8},...Array(20).fill({wch:15})];
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Open Snags");XLSX.writeFile(wb,`Open_Snags_${new Date().toISOString().slice(0,10)}.xlsx`);
-};
+// ── Exports: status & all-snags ─────────────────────────────────────────────────
 const exportStatus=houses=>{
   const rows=[["House","Kitchen Stage","Kitchen Snags","Kitchen Notes","Wardrobe Stage","Wardrobe Snags","Wardrobe Notes","Utility Stage","Utility Snags","Utility Notes","Overall %","Kitchen Inspected","Wardrobe Inspected","Utility Inspected"]];
   houses.forEach(h=>rows.push([h.name,h.rooms.Kitchen.installStage,rOpen(h.rooms.Kitchen),h.rooms.Kitchen.notes||"",h.rooms.Wardrobe.installStage,rOpen(h.rooms.Wardrobe),h.rooms.Wardrobe.notes||"",h.rooms.Utility.installStage,rOpen(h.rooms.Utility),h.rooms.Utility.notes||"",pct(h)+"%",fmtShort(h.rooms.Kitchen.lastInspection),fmtShort(h.rooms.Wardrobe.lastInspection),fmtShort(h.rooms.Utility.lastInspection)]));
   const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=rows[0].map(hd=>({wch:hd.includes("Notes")?42:hd.includes("Inspected")?20:18}));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Status Report");XLSX.writeFile(wb,`Status_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+};
+const exportSnags=(houses,project)=>{
+  const empty=Array(20).fill("");const rows=[XLSX_HEADERS];let found=false;
+  houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.filter(s=>!s.resolved).forEach(s=>{found=true;let qty=1,name="",desc="";const mat=matOf(s);
+    if(s.type==="WRONG_HOUSE"){name=s.description||"Wrong location delivery";desc=`Correct house: ${s.correctHouse||"unknown"}`;}
+    else if(s.type==="EXCESS_MAT"){qty=parseInt(s.quantity)||1;name=s.description||"Excess material";desc=[mat,s.quantity?`Qty:${s.quantity} ${s.unit||""}`:""].filter(Boolean).join(" + ");}
+    else if(s.type==="MISSING"){qty=parseInt(s.quantity)||1;name=s.description||"Missing from delivery";desc=[mat,s.quantity?`Qty:${s.quantity} ${s.unit||""}`:""].filter(Boolean).join(" + ");}
+    else{name=s.description||"";desc=mat;}
+    const loc=s.location||room;if(loc)desc=desc?`${desc} | Location: ${loc}`:`Location: ${loc}`;
+    rows.push([qty,project||"Athenry",h.name,s.type,name,desc,"",...empty]);})));
+  if(!found){alert("No open snags to export.");return;}
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:14},{wch:30},{wch:44},{wch:8},...Array(20).fill({wch:15})];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Open Snags");XLSX.writeFile(wb,`Open_Snags_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 const exportPDF=async(houses,project)=>{
   const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const pageW=210,pageH=297,M=15;let y=M;
@@ -138,10 +149,10 @@ const exportPDF=async(houses,project)=>{
   const space=n=>{if(y+n>pageH-M){doc.addPage();y=M;}};
   for(const h of houses){const hsnags=[];ROOMS.forEach(r=>h.rooms[r].snags.filter(s=>!s.resolved).forEach(s=>hsnags.push({...s,room:r})));if(hsnags.length===0)continue;
     space(15);doc.setFillColor(241,245,249);doc.rect(M,y-5,pageW-2*M,9,'F');doc.setFontSize(13).setFont(undefined,'bold').setTextColor(15,23,42);doc.text(`Unit: ${h.name}`,M+2,y+1);doc.setFontSize(10).setFont(undefined,'normal').setTextColor(100);doc.text(`${hsnags.length} open snag${hsnags.length!==1?"s":""}`,pageW-M-2,y+1,{align:'right'});y+=10;
-    for(const s of hsnags){const keys=snagKeys(s);space(30);const st=SNAG_TYPES.find(t=>t.code===s.type);
-      doc.setFontSize(10).setFont(undefined,'bold');const hx=(TC[s.type]||"#646464").replace('#','');doc.setTextColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));doc.text(`${s.room} • ${st?.label||s.type}`,M+2,y);
+    for(const s of hsnags){const keys=snagKeys(s);space(30);
+      doc.setFontSize(10).setFont(undefined,'bold');const hx=(TC[s.type]||"#646464").replace('#','');doc.setTextColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));doc.text(`${s.location||s.room} • ${typeLabel(s)}`,M+2,y);
       doc.setTextColor(120,120,120).setFont(undefined,'normal').setFontSize(9);doc.text(`Logged: ${new Date(s.loggedAt).toLocaleString('en-IE')}`,pageW-M-2,y,{align:'right'});y+=5;
-      doc.setFontSize(10).setTextColor(40,40,40);const lines=[];if(s.location)lines.push(`Location: ${s.location}`);if(s.material)lines.push(`Material: ${s.material}`);const dim=[s.height?`H:${s.height}mm`:"",s.width?`W:${s.width}mm`:""].filter(Boolean).join("  ");if(dim)lines.push(`Size: ${dim}`);if(s.quantity)lines.push(`Quantity: ${s.quantity} ${s.unit||""}`);if(s.correctHouse)lines.push(`Correct house: ${s.correctHouse}`);if(s.description)doc.splitTextToSize(s.description,pageW-2*M-5).forEach(w=>lines.push(w));
+      doc.setFontSize(10).setTextColor(40,40,40);const lines=[];const mat=matOf(s);if(mat)lines.push(`Material: ${mat}`);if(s.quantity)lines.push(`Quantity: ${s.quantity} ${s.unit||""}`);if(s.correctHouse)lines.push(`Correct house: ${s.correctHouse}`);if(s.description)doc.splitTextToSize(s.description,pageW-2*M-5).forEach(w=>lines.push(w));
       lines.forEach(line=>{doc.splitTextToSize(line,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});});
       if(keys.length){const iw=55,ih=41,gap=4;let x=M+2;y+=2;for(const k of keys){const photo=await getP(k);if(!photo)continue;if(x+iw>pageW-M){x=M+2;y+=ih+gap;}if(y+ih>pageH-M){doc.addPage();y=M;x=M+2;}try{doc.addImage(photo,'JPEG',x,y,iw,ih);}catch(e){}x+=iw+gap;}y+=ih+4;}
       doc.setDrawColor(230,230,230);doc.line(M,y+1,pageW-M,y+1);y+=6;}
@@ -150,52 +161,109 @@ const exportPDF=async(houses,project)=>{
   doc.save(`Snags_Report_${new Date().toISOString().slice(0,10)}.pdf`);
 };
 
+// ── Register exports (Excess / Wrong Location / Short) ─────────────────────────
+const REGS={
+  EXCESS_MAT:{title:"Excess Material",icon:"📦",color:"#f97316",bg:"#fff7ed",note:"Reuse At"},
+  WRONG_HOUSE:{title:"Wrong Location Deliveries",icon:"🔀",color:"#ec4899",bg:"#fdf2f8",note:"Action / Move To"},
+  MISSING:{title:"Short Deliveries",icon:"📉",color:"#ef4444",bg:"#fef2f2",note:"Action / Reorder"}
+};
+const exportRegExcel=(houses,project,type)=>{
+  const items=collectType(houses,type);const R=REGS[type];
+  if(items.length===0){alert(`No open ${R.title.toLowerCase()} to export.`);return;}
+  const rows=[["Project","Plot","Room","Material","Quantity","Unit","Description",type==="WRONG_HOUSE"?"Correct House":"—",R.note,"Logged"]];
+  items.forEach(it=>rows.push([project||"Athenry",it.house.name,it.snag.location||it.room,matOf(it.snag),it.snag.quantity||"",it.snag.unit||"",it.snag.description||"",it.snag.correctHouse||"",it.snag.reuseNote||"",fmtShort(it.snag.loggedAt)]));
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:11},{wch:12},{wch:11},{wch:24},{wch:9},{wch:9},{wch:38},{wch:14},{wch:34},{wch:13}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,R.title.slice(0,30));
+  XLSX.writeFile(wb,`${R.title.replace(/ /g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`);
+};
+const exportRegPDF=async(houses,project,type,withPhotos)=>{
+  const items=collectType(houses,type);const R=REGS[type];
+  if(items.length===0){alert(`No open ${R.title.toLowerCase()} to export.`);return;}
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const pageW=210,pageH=297,M=15;let y=M;
+  doc.setFontSize(20).setFont(undefined,'bold');doc.text(`${R.title} Report`,M,y);y+=8;
+  doc.setFontSize(11).setFont(undefined,'normal').setTextColor(100);doc.text(`Project: ${project||"Athenry"}`,M,y);y+=5;doc.text(`Generated: ${new Date().toLocaleString('en-IE')}`,M,y);y+=5;
+  doc.setFontSize(10).setTextColor(60);doc.text(`Total items: ${items.length}`,M,y);y+=10;
+  const hx=R.color.replace('#','');const cr=parseInt(hx.slice(0,2),16),cg=parseInt(hx.slice(2,4),16),cb=parseInt(hx.slice(4,6),16);
+  for(const it of items){
+    if(y+34>pageH-M){doc.addPage();y=M;}
+    doc.setFillColor(245,245,245);doc.rect(M,y-5,pageW-2*M,9,'F');
+    doc.setFontSize(12).setFont(undefined,'bold').setTextColor(cr,cg,cb);doc.text(`${it.house.name}  ·  ${it.snag.location||it.room}`,M+2,y+1);
+    if(it.snag.quantity){doc.setFontSize(11).text(`${it.snag.quantity} ${it.snag.unit||""}`,pageW-M-2,y+1,{align:'right'});}
+    y+=10;doc.setFontSize(10).setFont(undefined,'normal').setTextColor(40);
+    const mat=matOf(it.snag);if(mat){doc.text(`Material: ${mat}`,M+2,y);y+=5;}
+    if(it.snag.correctHouse){doc.setFont(undefined,'bold');doc.text(`Correct house: ${it.snag.correctHouse}`,M+2,y);doc.setFont(undefined,'normal');y+=5;}
+    if(it.snag.description){doc.splitTextToSize(`Description: ${it.snag.description}`,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});}
+    if(it.snag.reuseNote){doc.setFont(undefined,'bold').setTextColor(22,163,74);doc.splitTextToSize(`${R.note}: ${it.snag.reuseNote}`,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});doc.setFont(undefined,'normal').setTextColor(40);}
+    doc.setFontSize(9).setTextColor(130);doc.text(`Logged: ${fmtDate(it.snag.loggedAt)}`,M+2,y);y+=5;doc.setFontSize(10).setTextColor(40);
+    if(withPhotos){const keys=snagKeys(it.snag);if(keys.length){const iw=55,ih=41,gap=4;let x=M+2;y+=1;for(const k of keys){const photo=await getP(k);if(!photo)continue;if(x+iw>pageW-M){x=M+2;y+=ih+gap;}if(y+ih>pageH-M){doc.addPage();y=M;x=M+2;}try{doc.addImage(photo,'JPEG',x,y,iw,ih);}catch(e){}x+=iw+gap;}y+=ih+3;}}
+    doc.setDrawColor(225,225,225);doc.line(M,y,pageW-M,y);y+=6;
+  }
+  const n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8).setTextColor(150);doc.text(`Page ${i} of ${n}`,pageW/2,pageH-7,{align:'center'});}
+  doc.save(`${R.title.replace(/ /g,"_")}_${new Date().toISOString().slice(0,10)}.pdf`);
+};
+
 // ── UI Atoms ───────────────────────────────────────────────────────────────────
 const PBar=({p,color=T.success,h=6})=><div style={{background:T.border,borderRadius:99,height:h,overflow:"hidden",width:"100%"}}><div style={{width:`${p}%`,height:"100%",background:color,borderRadius:99,transition:"width .5s"}}/></div>;
-function Btn({children,onClick,v,sm,sx={}}){const vs={_:{background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text2},primary:{background:T.primary,border:"none",color:"#fff"},danger:{background:"#fff",border:`1px solid ${T.danger}55`,color:T.danger},success:{background:"#fff",border:`1px solid ${T.success}55`,color:T.success},ghost:{background:"transparent",border:"none",color:T.text2}};return <button className="btn" onClick={onClick} style={{...(vs[v]||vs._),padding:sm?"6px 12px":"10px 16px",fontSize:sm?12:14,borderRadius:9,cursor:"pointer",fontWeight:600,minHeight:sm?34:44,...sx}}>{children}</button>;}
+function Btn({children,onClick,v,sm,sx={}}){const vs={_:{background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text2},primary:{background:T.primary,border:"none",color:"#fff"},danger:{background:"#fff",border:`1px solid ${T.danger}55`,color:T.danger},success:{background:"#fff",border:`1px solid ${T.success}55`,color:T.success},ghost:{background:"transparent",border:"none",color:T.text2}};return <button className="btn" onClick={onClick} style={{...(vs[v]||vs._),padding:sm?"6px 12px":"10px 16px",fontSize:sm?13:15,borderRadius:9,cursor:"pointer",fontWeight:600,minHeight:sm?36:44,...sx}}>{children}</button>;}
 const L=({c})=><div style={{fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:.5,marginBottom:6,fontWeight:600}}>{c}</div>;
-const II={background:T.cardAlt,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:9,padding:"10px 12px",fontSize:14,width:"100%",outline:"none",boxSizing:"border-box",minHeight:44,transition:"border .15s, box-shadow .15s"};
-const Card=({children,extraSx})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 1px 3px rgba(15,23,42,.04)",...extraSx}}>{children}</div>;
-
-// Loads a photo by key, displays it, optional remove + caption
-function PhotoThumb({photoKey,onRemove,caption,size=110}){
-  const [src,setSrc]=useState(null);
+const II={background:T.cardAlt,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:9,padding:"10px 12px",width:"100%",outline:"none",boxSizing:"border-box",minHeight:44,transition:"border .15s, box-shadow .15s"};
+const Card=({children,extraSx})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,marginBottom:12,boxShadow:"0 1px 3px rgba(15,23,42,.04)",...extraSx}}>{children}</div>;
+function PhotoThumb({photoKey,onRemove,size=100}){
+  const [src,setSrc]=useState(null);const [big,setBig]=useState(false);
   useEffect(()=>{let on=true;getP(photoKey).then(p=>{if(on)setSrc(p);});return()=>{on=false;};},[photoKey]);
-  return(
+  return(<>
     <div style={{position:"relative",width:size,height:size,borderRadius:9,overflow:"hidden",border:`1px solid ${T.borderStrong}`,background:T.cardAlt,flexShrink:0}}>
-      {src?<img src={src} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:T.text3,fontSize:11}}>…</div>}
-      {caption&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"#000a",color:"#fff",fontSize:9,padding:"2px 5px",fontFamily:"'DM Mono',monospace"}}>{caption}</div>}
-      {onRemove&&<button onClick={onRemove} style={{position:"absolute",top:3,right:3,background:"#000c",border:"none",color:"#fff",borderRadius:5,cursor:"pointer",padding:"1px 7px",fontSize:13}}>×</button>}
+      {src?<img src={src} onClick={()=>setBig(true)} style={{width:"100%",height:"100%",objectFit:"cover",display:"block",cursor:"zoom-in"}}/>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:T.text3,fontSize:11}}>…</div>}
+      {onRemove&&<button onClick={onRemove} style={{position:"absolute",top:3,right:3,background:"#000c",border:"none",color:"#fff",borderRadius:5,cursor:"pointer",padding:"1px 8px",fontSize:14}}>×</button>}
     </div>
-  );
+    {big&&src&&<div onClick={()=>setBig(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out",padding:12}}><img src={src} style={{maxWidth:"100%",maxHeight:"100%",borderRadius:8}}/></div>}
+  </>);
 }
-// Dashed "add photo" tile
-function AddPhotoTile({onAdd,size=110,label="Add"}){
+function AddPhotoTile({onAdd,size=100,label="Add"}){
   const ref=useRef();
   const onFile=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>onAdd(ev.target.result);r.readAsDataURL(f);e.target.value="";};
   return(<><input ref={ref} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
-    <button onClick={()=>ref.current?.click()} style={{width:size,height:size,borderRadius:9,border:`2px dashed ${T.borderStrong}`,background:T.cardAlt,color:T.text2,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,fontSize:12,fontWeight:600,flexShrink:0}}><span style={{fontSize:24}}>📷</span>{label}</button></>);
+    <button onClick={()=>ref.current?.click()} style={{width:size,height:size,borderRadius:9,border:`2px dashed ${T.borderStrong}`,background:T.cardAlt,color:T.text2,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,fontSize:12,fontWeight:600,flexShrink:0}}><span style={{fontSize:22}}>📷</span>{label}</button></>);
+}
+// Material picker with none + Other (manual entry)
+function MatPicker({value,chosen,onChange,required}){
+  const isOther=chosen&&value&&!MATS.includes(value);
+  const [other,setOther]=useState(isOther);
+  const selVal=other?"__OTHER__":(chosen&&value?value:(required?value||MATS[0]:""));
+  return(
+    <div>
+      <select value={selVal} onChange={e=>{const v=e.target.value;if(v==="__OTHER__"){setOther(true);onChange("",true);}else if(v===""){setOther(false);onChange("",false);}else{setOther(false);onChange(v,true);}}} style={{...II,background:"#fff"}}>
+        {!required&&<option value="">— no material —</option>}
+        {MATS.map(m=><option key={m} value={m}>{m}</option>)}
+        <option value="__OTHER__">Other… (type below)</option>
+      </select>
+      {other&&<input placeholder="Type material name…" value={value||""} onChange={e=>onChange(e.target.value,true)} style={{...II,background:"#fff",marginTop:8}}/>}
+    </div>
+  );
 }
 
-// ── Snag Form (add or edit, multi-photo) ─────────────────────────────────────────
-function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 Log New Snag"}){
-  const [f,sf]=useState(()=>initial||{type:"MISSING",material:MATS[0],description:"",correctHouse:"",quantity:"",unit:"sheets",photos:[]});
-  const sel=SNAG_TYPES.find(t=>t.code===f.type);const set=p=>sf(x=>({...x,...p}));
+// ── Snag Form ──────────────────────────────────────────────────────────────────
+function SnagForm({initial,onSubmit,onCancel,submitLabel="Save Snag",title="📋 Log New Snag",hideType}){
+  const [f,sf]=useState(()=>initial||{type:"MISSING",material:"",matChosen:false,description:"",correctHouse:"",quantity:"",unit:"sheets",photos:[]});
+  const sel=SNAG_TYPES.find(t=>t.code===f.type)||{};const set=p=>sf(x=>({...x,...p}));
+  const isExcess=f.type==="EXCESS_MAT";
   const addPhoto=dataUrl=>set({photos:[...(f.photos||[]),{dataUrl,key:null}]});
   const removePhoto=i=>set({photos:(f.photos||[]).filter((_,idx)=>idx!==i)});
   return(
-    <div style={{background:T.cardAlt,border:`1px solid ${T.borderStrong}`,borderRadius:12,padding:16,marginBottom:12}}>
-      <div style={{fontWeight:700,fontSize:15,color:T.text,marginBottom:14}}>{title}</div>
-      <div style={{marginBottom:12}}><L c="Issue Type"/><select value={f.type} onChange={e=>set({type:e.target.value})} style={{...II,background:"#fff"}}>{SNAG_TYPES.map(t=><option key={t.code} value={t.code}>{t.label}</option>)}</select></div>
-      {sel?.excess&&<>
-        <div style={{marginBottom:12}}><L c="Material"/><select value={f.material||MATS[0]} onChange={e=>set({material:e.target.value})} style={{...II,background:"#fff"}}>{MATS.map(m=><option key={m}>{m}</option>)}</select></div>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:12}}><div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity||""} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div><div><L c="Unit"/><select value={f.unit||"sheets"} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div></div></>}
+    <div style={{background:T.cardAlt,border:`1px solid ${T.borderStrong}`,borderRadius:12,padding:14,marginBottom:12}}>
+      <div style={{fontWeight:700,fontSize:15,color:T.text,marginBottom:12}}>{title}</div>
+      {!hideType&&<div style={{marginBottom:12}}><L c="Issue Type"/><select value={f.type} onChange={e=>{const nt=e.target.value;set({type:nt,matChosen:nt==="EXCESS_MAT"?true:f.matChosen,material:nt==="EXCESS_MAT"&&!f.material?MATS[0]:f.material});}} style={{...II,background:"#fff"}}>{SNAG_TYPES.map(t=><option key={t.code} value={t.code}>{t.label}</option>)}</select></div>}
+      <div style={{marginBottom:12}}><L c={isExcess?"Material":"Material (optional)"}/><MatPicker value={f.material} chosen={isExcess?true:f.matChosen} required={isExcess} onChange={(m,ch)=>set({material:m,matChosen:isExcess?true:ch})}/></div>
+      {(sel.qty)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+        <div><L c="Quantity"/><input type="number" inputMode="numeric" placeholder="e.g. 3" value={f.quantity||""} onChange={e=>set({quantity:e.target.value})} style={{...II,background:"#fff"}}/></div>
+        <div><L c="Unit"/><select value={f.unit||"sheets"} onChange={e=>set({unit:e.target.value})} style={{...II,background:"#fff"}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div>
+      </div>}
       {f.type==="WRONG_HOUSE"&&<div style={{marginBottom:12}}><L c="Correct House / Plot"/><input placeholder="e.g. Plot 4" value={f.correctHouse||""} onChange={e=>set({correctHouse:e.target.value})} style={{...II,background:"#fff"}}/></div>}
       <div style={{marginBottom:12}}><L c="Details / Description"/><textarea placeholder="Describe the issue…" rows={2} value={f.description||""} onChange={e=>set({description:e.target.value})} style={{...II,background:"#fff",resize:"vertical"}}/></div>
-      <div style={{marginBottom:16}}><L c="Photos (add as many as you like)"/>
+      <div style={{marginBottom:14}}><L c="Photos"/>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {(f.photos||[]).map((p,i)=>(<div key={i} style={{position:"relative",width:100,height:100,borderRadius:9,overflow:"hidden",border:`1px solid ${T.borderStrong}`,flexShrink:0}}><img src={p.dataUrl} style={{width:"100%",height:"100%",objectFit:"cover"}}/><button onClick={()=>removePhoto(i)} style={{position:"absolute",top:3,right:3,background:"#000c",border:"none",color:"#fff",borderRadius:5,cursor:"pointer",padding:"1px 7px",fontSize:13}}>×</button></div>))}
-          <AddPhotoTile onAdd={addPhoto} size={100} label="Add"/>
+          {(f.photos||[]).map((p,i)=>(<div key={i} style={{position:"relative",width:90,height:90,borderRadius:9,overflow:"hidden",border:`1px solid ${T.borderStrong}`,flexShrink:0}}><img src={p.dataUrl} style={{width:"100%",height:"100%",objectFit:"cover"}}/><button onClick={()=>removePhoto(i)} style={{position:"absolute",top:3,right:3,background:"#000c",border:"none",color:"#fff",borderRadius:5,cursor:"pointer",padding:"1px 7px",fontSize:13}}>×</button></div>))}
+          <AddPhotoTile onAdd={addPhoto} size={90} label="Add"/>
         </div>
       </div>
       <div style={{display:"flex",gap:8}}><Btn v="primary" onClick={()=>onSubmit(f)}>{submitLabel}</Btn><Btn v="ghost" sm onClick={onCancel}>Cancel</Btn></div>
@@ -203,42 +271,41 @@ function SnagForm({initial,onSubmit,onCancel,submitLabel="Log Snag",title="📋 
   );
 }
 
-// ── Snag Item (multi-photo) ──────────────────────────────────────────────────────
+// ── Snag Item ──────────────────────────────────────────────────────────────────
 function SnagItem({snag,room,onToggle,onDelete,onEdit}){
-  const [exp,setExp]=useState(false);const t=SNAG_TYPES.find(x=>x.code===snag.type);const c=TC[snag.type]||T.text3;
-  const keys=snagKeys(snag);
-  const loc=snag.location||room||"";
-  const summary=snag.description?(snag.description.length>55?snag.description.slice(0,55)+"…":snag.description):snag.material?[snag.material,snag.height&&`H:${snag.height}mm`,snag.width&&`W:${snag.width}mm`,snag.quantity&&`×${snag.quantity} ${snag.unit||""}`].filter(Boolean).join(" "):"—";
+  const [exp,setExp]=useState(false);const c=TC[snag.type]||T.text3;
+  const keys=snagKeys(snag);const mat=matOf(snag);const loc=snag.location||room||"";
+  const summary=snag.description?(snag.description.length>60?snag.description.slice(0,60)+"…":snag.description):[mat,snag.quantity&&`${snag.quantity} ${snag.unit||""}`].filter(Boolean).join(" · ")||typeLabel(snag);
   return(
     <div style={{border:`1px solid ${snag.resolved?T.border:c+"55"}`,borderRadius:11,marginBottom:8,overflow:"hidden",background:snag.resolved?T.cardAlt:"#fff"}}>
-      <div style={{padding:"11px 12px",display:"flex",alignItems:"center",gap:9,cursor:"pointer",minHeight:54}} onClick={()=>setExp(e=>!e)}>
-        <button onClick={e=>{e.stopPropagation();onToggle();}} style={{background:snag.resolved?T.success+"22":T.danger+"22",border:`1px solid ${snag.resolved?T.success+"77":T.danger+"77"}`,color:snag.resolved?T.success:T.danger,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:10,fontFamily:"'DM Mono',monospace",fontWeight:600,whiteSpace:"nowrap",flexShrink:0,minHeight:34}}>{snag.resolved?"DONE":"OPEN"}</button>
-        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,flexShrink:0,minWidth:74}}>
-          {loc&&<span style={{fontSize:9,fontWeight:700,color:T.text2,background:T.cardAlt,border:`1px solid ${T.border}`,padding:"1px 6px",borderRadius:5,letterSpacing:.5,textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>📍 {loc}</span>}
-          <span style={{fontSize:10,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}}>{(t?.label||snag.type||"").split(" ").slice(0,2).join(" ")}</span>
+      <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:9,cursor:"pointer",minHeight:52}} onClick={()=>setExp(e=>!e)}>
+        <button onClick={e=>{e.stopPropagation();onToggle();}} style={{background:snag.resolved?T.success+"22":T.danger+"22",border:`1px solid ${snag.resolved?T.success+"77":T.danger+"77"}`,color:snag.resolved?T.success:T.danger,borderRadius:7,padding:"5px 9px",cursor:"pointer",fontSize:10,fontFamily:"'DM Mono',monospace",fontWeight:600,whiteSpace:"nowrap",flexShrink:0,minHeight:34}}>{snag.resolved?"DONE":"OPEN"}</button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,color:snag.resolved?T.text3:T.text,textDecoration:snag.resolved?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{summary}</div>
+          <div style={{fontSize:10,color:c,marginTop:2,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{typeLabel(snag).toUpperCase()}<span style={{color:T.text3,fontWeight:500}}> · {fmtShort(snag.loggedAt)}</span></div>
         </div>
-        <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:snag.resolved?T.text3:T.text,textDecoration:snag.resolved?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{summary}</div><div style={{fontSize:10,color:T.text3,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{fmtDate(snag.loggedAt)}</div></div>
         {keys.length>0&&<span style={{flexShrink:0,fontSize:13,color:T.text2}}>📷{keys.length>1?keys.length:""}</span>}
         <span style={{color:T.text3,fontSize:11,flexShrink:0}}>{exp?"▲":"▼"}</span>
       </div>
       {exp&&(
         <div style={{padding:"10px 14px 14px",borderTop:`1px solid ${T.border}`,background:T.cardAlt}}>
-          {loc&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>📍 Location: <span style={{color:T.text,fontWeight:600}}>{loc}</span></div>}
-          {snag.material&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>Material: <span style={{color:T.text,fontWeight:500}}>{snag.material}</span></div>}
-          {(snag.height||snag.width)&&<div style={{fontSize:13,color:T.text2,marginBottom:4}}>{snag.height&&<>H: <span style={{color:T.text,fontWeight:500}}>{snag.height}mm  </span></>}{snag.width&&<>W: <span style={{color:T.text,fontWeight:500}}>{snag.width}mm</span></>}</div>}
-          {snag.quantity&&<div style={{fontSize:13,color:"#f97316",marginBottom:4,fontWeight:600}}>Qty: {snag.quantity} {snag.unit||""}</div>}
-          {snag.correctHouse&&<div style={{fontSize:13,color:"#ec4899",marginBottom:4,fontWeight:600}}>→ Correct house: {snag.correctHouse}</div>}
-          {snag.description&&<div style={{fontSize:14,color:T.text,marginBottom:8,lineHeight:1.55}}>{snag.description}</div>}
-          {keys.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:8,marginBottom:10}}>{keys.map(k=><PhotoThumb key={k} photoKey={k} size={130}/>)}</div>}
-          <div style={{display:"flex",gap:8,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`}}><Btn sm v="primary" onClick={onEdit}>✏️ Edit</Btn><Btn sm v="danger" onClick={()=>{if(confirm("Delete this snag?"))onDelete();}}>🗑 Delete</Btn></div>
+          {loc&&<div style={{fontSize:14,color:T.text2,marginBottom:4}}>📍 <span style={{color:T.text,fontWeight:600}}>{loc}</span></div>}
+          {mat&&<div style={{fontSize:14,color:T.text2,marginBottom:4}}>Material: <span style={{color:T.text,fontWeight:500}}>{mat}</span></div>}
+          {snag.quantity&&<div style={{fontSize:14,color:T.orange,marginBottom:4,fontWeight:600}}>Qty: {snag.quantity} {snag.unit||""}</div>}
+          {snag.correctHouse&&<div style={{fontSize:14,color:"#ec4899",marginBottom:4,fontWeight:600}}>→ Correct house: {snag.correctHouse}</div>}
+          {snag.description&&<div style={{fontSize:15,color:T.text,marginBottom:8,lineHeight:1.5}}>{snag.description}</div>}
+          <div style={{fontSize:11,color:T.text3,marginBottom:6,fontFamily:"'DM Mono',monospace"}}>Logged {fmtDate(snag.loggedAt)}{snag.editedAt?` · edited ${fmtDate(snag.editedAt)}`:""}</div>
+          {keys.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:6,marginBottom:8}}>{keys.map(k=><PhotoThumb key={k} photoKey={k} size={110}/>)}</div>}
+          <div style={{display:"flex",gap:8,marginTop:8,paddingTop:10,borderTop:`1px solid ${T.border}`}}><Btn sm v="primary" onClick={onEdit}>✏️ Edit</Btn><Btn sm v="danger" onClick={()=>{if(confirm("Delete this snag?"))onDelete();}}>🗑 Delete</Btn></div>
         </div>
       )}
     </div>
   );
 }
 
-// ── Room Panel ─────────────────────────────────────────────────────────────────
+// ── Room Panel (sub-tabs: Snags | Install) ──────────────────────────────────────
 function RoomPanel({houseId,room,rd,onUpdate}){
+  const [sub,setSub]=useState("snags");
   const [showAdd,setShowAdd]=useState(false);const [editing,setEditing]=useState(null);
   const upd=d=>onUpdate(d);
   const setStage=s=>upd({...rd,installStage:s,lastInspection:new Date().toISOString()});
@@ -247,39 +314,54 @@ function RoomPanel({houseId,room,rd,onUpdate}){
   const addFinishPhoto=async dataUrl=>{const k=`ph:fin:${uid()}`;await saveP(k,dataUrl);upd({...rd,finishPhotoKeys:[...finishKeys(rd),k],lastInspection:new Date().toISOString()});};
   const removeFinishPhoto=async k=>{await delP(k);upd({...rd,finishPhotoKeys:finishKeys(rd).filter(x=>x!==k)});};
   const submitNew=async fd=>{const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:[...rd.snags,{...rest,location:room,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKeys}]});setShowAdd(false);};
-  const startEdit=async snag=>{const keys=snagKeys(snag);const photos=[];for(const k of keys){const d=await getP(k);if(d)photos.push({dataUrl:d,key:k});}setEditing({snagId:snag.id,initial:{type:snag.type,material:snag.material||MATS[0],height:snag.height||"",width:snag.width||"",description:snag.description||"",correctHouse:snag.correctHouse||"",quantity:snag.quantity||"",unit:snag.unit||"sheets",photos}});setShowAdd(false);};
-  const submitEdit=async fd=>{const old=rd.snags.find(s=>s.id===editing.snagId);if(!old){setEditing(null);return;}const oldKeys=snagKeys(old);const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}for(const k of oldKeys)if(!photoKeys.includes(k))delP(k);const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,location:room,photoKeys,photoKey:undefined,editedAt:new Date().toISOString()}:s)});setEditing(null);};
+  const startEdit=async snag=>{const keys=snagKeys(snag);const photos=[];for(const k of keys){const d=await getP(k);if(d)photos.push({dataUrl:d,key:k});}setEditing({snagId:snag.id,initial:{type:snag.type,material:matOf(snag),matChosen:snag.type==="EXCESS_MAT"?true:!!snag.matChosen,description:snag.description||"",correctHouse:snag.correctHouse||"",quantity:snag.quantity||"",unit:snag.unit||"sheets",photos}});setShowAdd(false);};
+  const submitEdit=async fd=>{const old=rd.snags.find(s=>s.id===editing.snagId);if(!old){setEditing(null);return;}const oldKeys=snagKeys(old);const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}for(const k of oldKeys)if(!photoKeys.includes(k))delP(k);const {photos,...rest}=fd;upd({...rd,lastInspection:new Date().toISOString(),snags:rd.snags.map(s=>s.id===editing.snagId?{...s,...rest,location:s.location||room,photoKeys,photoKey:undefined,editedAt:new Date().toISOString()}:s)});setEditing(null);};
   const tog=id=>upd({...rd,snags:rd.snags.map(s=>s.id===id?{...s,resolved:!s.resolved,resolvedAt:!s.resolved?new Date().toISOString():null}:s)});
   const del=id=>{const s=rd.snags.find(x=>x.id===id);snagKeys(s||{}).forEach(delP);upd({...rd,snags:rd.snags.filter(x=>x.id!==id)});};
-  const open=rOpen(rd);
+  const open=rOpen(rd);const done=rd.snags.filter(s=>s.resolved).length;
   const renderSnag=s=>editing?.snagId===s.id?<SnagForm key={s.id} initial={editing.initial} onSubmit={submitEdit} onCancel={()=>setEditing(null)} submitLabel="Save Changes" title="✏️ Edit Snag"/>:<SnagItem key={s.id} snag={s} room={room} onToggle={()=>tog(s.id)} onDelete={()=>del(s.id)} onEdit={()=>startEdit(s)}/>;
+  const SubBtn=({id,label})=><button onClick={()=>setSub(id)} style={{flex:1,padding:"10px 6px",background:sub===id?T.card:"transparent",border:`1px solid ${sub===id?T.borderStrong:"transparent"}`,borderRadius:9,color:sub===id?T.text:T.text2,fontWeight:sub===id?700:500,fontSize:14,cursor:"pointer",minHeight:42}}>{label}</button>;
   return(
     <div>
-      <Card>
-        <L c="Installation Stage"/>
-        <div style={{display:"flex",flexWrap:"wrap",gap:7}}>{STAGES.map(s=>{const a=rd.installStage===s;const c=SC[s];return(<button key={s} className="btn" onClick={()=>setStage(s)} style={{background:a?c+"15":"#fff",border:`1.5px solid ${a?c:T.border}`,color:a?c:T.text2,borderRadius:9,padding:"8px 14px",cursor:"pointer",fontSize:13,fontWeight:a?700:500,display:"flex",alignItems:"center",gap:7,minHeight:42}}><span style={{width:9,height:9,borderRadius:"50%",background:c,boxShadow:a?`0 0 0 3px ${c}33`:"none",flexShrink:0}}/>{s}</button>);})}</div>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:13,paddingTop:13,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}><span style={{fontSize:12,color:T.text2,flex:1}}>Last inspection:&nbsp;<span style={{color:T.text,fontFamily:"'DM Mono',monospace",fontWeight:500}}>{fmtDate(rd.lastInspection)}</span></span><Btn sm onClick={stampNow}>🕐 Stamp Now</Btn></div>
-      </Card>
-      {rd.installStage==="Finished"&&(
-        <Card extraSx={{borderColor:T.success+"66",background:T.success+"08"}}>
-          <L c="✓ Completion Photos"/>
-          <div style={{fontSize:12,color:T.text2,marginBottom:10}}>Add as many photos as you like to record the finished room.</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{fk.map(k=><PhotoThumb key={k} photoKey={k} onRemove={()=>removeFinishPhoto(k)} size={120}/>)}<AddPhotoTile onAdd={addFinishPhoto} size={120} label="Add photo"/></div>
+      <div style={{display:"flex",gap:6,background:T.border+"66",borderRadius:11,padding:4,marginBottom:12}}>
+        <SubBtn id="snags" label={`Snags${open>0?` (${open})`:""}`}/>
+        <SubBtn id="install" label="Install Stage"/>
+      </div>
+      {sub==="install"&&(
+        <div>
+          <Card>
+            <L c="Installation Stage"/>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {STAGES.map(s=>{const a=rd.installStage===s;const c=SC[s];return(
+                <button key={s} className="btn" onClick={()=>setStage(s)} style={{background:a?c+"15":"#fff",border:`1.5px solid ${a?c:T.border}`,color:a?c:T.text2,borderRadius:9,padding:"11px 14px",cursor:"pointer",fontSize:15,fontWeight:a?700:500,display:"flex",alignItems:"center",gap:9,minHeight:46,textAlign:"left"}}>
+                  <span style={{width:10,height:10,borderRadius:"50%",background:c,boxShadow:a?`0 0 0 3px ${c}33`:"none",flexShrink:0}}/>{s}{a&&<span style={{marginLeft:"auto",fontSize:13}}>✓</span>}
+                </button>);})}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginTop:13,paddingTop:13,borderTop:`1px solid ${T.border}`,flexWrap:"wrap"}}><span style={{fontSize:13,color:T.text2,flex:1,minWidth:150}}>Last inspection:<br/><span style={{color:T.text,fontFamily:"'DM Mono',monospace",fontWeight:500,fontSize:12}}>{fmtDate(rd.lastInspection)}</span></span><Btn sm onClick={stampNow}>🕐 Stamp Now</Btn></div>
+          </Card>
+          {rd.installStage==="Finished"&&(
+            <Card extraSx={{borderColor:T.success+"66",background:T.success+"08"}}>
+              <L c="✓ Completion Photos"/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{fk.map(k=><PhotoThumb key={k} photoKey={k} onRemove={()=>removeFinishPhoto(k)} size={100}/>)}<AddPhotoTile onAdd={addFinishPhoto} size={100} label="Add"/></div>
+            </Card>
+          )}
+          <Card><L c="Notes"/><textarea value={rd.notes} onChange={e=>upd({...rd,notes:e.target.value})} placeholder="Add notes for this room…" rows={3} style={{...II,background:"#fff",resize:"vertical"}}/></Card>
+        </div>
+      )}
+      {sub==="snags"&&(
+        <Card extraSx={{padding:0,overflow:"hidden"}}>
+          <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:52,flexWrap:"wrap",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:15,color:T.text}}>Snags</span>{open>0&&<span style={{background:T.danger+"15",color:T.danger,border:`1px solid ${T.danger}66`,borderRadius:99,fontSize:11,padding:"2px 9px",fontWeight:600}}>{open} open</span>}{done>0&&<span style={{background:T.success+"15",color:T.success,border:`1px solid ${T.success}66`,borderRadius:99,fontSize:11,padding:"2px 9px",fontWeight:600}}>{done} done</span>}</div>
+            <Btn sm v={showAdd?"ghost":"primary"} onClick={()=>{setShowAdd(v=>!v);setEditing(null);}}>{showAdd?"✕ Cancel":"+ Log Snag"}</Btn>
+          </div>
+          <div style={{padding:showAdd||editing||rd.snags.length>0?"12px":"14px 16px"}}>
+            {showAdd&&<SnagForm onSubmit={submitNew} onCancel={()=>setShowAdd(false)}/>}
+            {rd.snags.length===0&&!showAdd&&<div style={{color:T.text3,fontSize:13,fontStyle:"italic"}}>No snags logged for this room</div>}
+            {rd.snags.filter(s=>!s.resolved).map(renderSnag)}
+            {done>0&&(<details style={{marginTop:4}}><summary style={{fontSize:13,color:T.text2,padding:"8px 0",userSelect:"none",fontWeight:500}}>Show resolved ({done}) ▾</summary><div style={{marginTop:6}}>{rd.snags.filter(s=>s.resolved).map(renderSnag)}</div></details>)}
+          </div>
         </Card>
       )}
-      <Card extraSx={{padding:0,overflow:"hidden"}}>
-        <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:54,flexWrap:"wrap",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:15,color:T.text}}>Snags & Issues</span>{open>0&&<span style={{background:T.danger+"15",color:T.danger,border:`1px solid ${T.danger}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{open} open</span>}{rd.snags.filter(s=>s.resolved).length>0&&<span style={{background:T.success+"15",color:T.success,border:`1px solid ${T.success}66`,borderRadius:99,fontSize:11,padding:"2px 10px",fontWeight:600}}>{rd.snags.filter(s=>s.resolved).length} done</span>}</div>
-          <Btn sm v={showAdd?"ghost":"primary"} onClick={()=>{setShowAdd(v=>!v);setEditing(null);}}>{showAdd?"✕ Cancel":"+ Log Snag"}</Btn>
-        </div>
-        <div style={{padding:showAdd||editing||rd.snags.length>0?"12px":"14px 16px"}}>
-          {showAdd&&<SnagForm onSubmit={submitNew} onCancel={()=>setShowAdd(false)}/>}
-          {rd.snags.length===0&&!showAdd&&<div style={{color:T.text3,fontSize:13,fontStyle:"italic"}}>No snags logged for this room</div>}
-          {rd.snags.filter(s=>!s.resolved).map(renderSnag)}
-          {rd.snags.filter(s=>s.resolved).length>0&&(<details style={{marginTop:4}}><summary style={{fontSize:12,color:T.text2,padding:"7px 0",userSelect:"none",fontWeight:500}}>Show resolved ({rd.snags.filter(s=>s.resolved).length}) ▾</summary><div style={{marginTop:6}}>{rd.snags.filter(s=>s.resolved).map(renderSnag)}</div></details>)}
-        </div>
-      </Card>
-      <Card><L c="Notes"/><textarea value={rd.notes} onChange={e=>upd({...rd,notes:e.target.value})} placeholder="Add notes for this room…" rows={3} style={{...II,background:"#fff",resize:"vertical"}}/></Card>
     </div>
   );
 }
@@ -289,12 +371,12 @@ function HouseDetail({house,onUpdate,onBack}){
   const [ar,setAr]=useState("Kitchen");const p=pct(house);const pc=pColor(p);
   return(
     <div style={{minHeight:"100vh",background:T.bg}}>
-      <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"14px 15px 0",position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 3px rgba(15,23,42,.04)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><Btn sm onClick={onBack}>← Back</Btn><h1 style={{margin:0,flex:1,fontSize:19,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400}}>{house.name}</h1><span style={{fontSize:18,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span></div>
+      <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"12px 14px 0",position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 3px rgba(15,23,42,.04)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}><Btn sm onClick={onBack}>←</Btn><h1 style={{margin:0,flex:1,fontSize:18,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{house.name}</h1><span style={{fontSize:17,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span></div>
         <PBar p={p} color={pc} h={5}/>
-        <div style={{display:"flex",marginTop:10}}>{ROOMS.map(r=>{const o=rOpen(house.rooms[r]);return(<button key={r} onClick={()=>setAr(r)} style={{flex:1,padding:"11px 5px",background:"none",border:"none",borderBottom:ar===r?`3px solid ${T.primary}`:"3px solid transparent",color:ar===r?T.primary:T.text2,cursor:"pointer",fontSize:14,fontWeight:ar===r?700:500,minHeight:48}}>{r}{o>0&&<span style={{background:T.danger,color:"#fff",borderRadius:99,fontSize:10,padding:"2px 7px",marginLeft:6,fontWeight:700}}>{o}</span>}</button>);})}</div>
+        <div style={{display:"flex",marginTop:8}}>{ROOMS.map(r=>{const o=rOpen(house.rooms[r]);return(<button key={r} onClick={()=>setAr(r)} style={{flex:1,padding:"10px 4px",background:"none",border:"none",borderBottom:ar===r?`3px solid ${T.primary}`:"3px solid transparent",color:ar===r?T.primary:T.text2,cursor:"pointer",fontSize:14,fontWeight:ar===r?700:500,minHeight:46}}>{r}{o>0&&<span style={{background:T.danger,color:"#fff",borderRadius:99,fontSize:10,padding:"1px 6px",marginLeft:5,fontWeight:700}}>{o}</span>}</button>);})}</div>
       </div>
-      <div style={{padding:"15px 14px",paddingBottom:"calc(90px + env(safe-area-inset-bottom))",maxWidth:700,margin:"0 auto"}}><RoomPanel key={ar} houseId={house.id} room={ar} rd={house.rooms[ar]} onUpdate={upd=>onUpdate({...house,rooms:{...house.rooms,[ar]:upd}})}/></div>
+      <div style={{padding:"12px 12px",paddingBottom:"calc(90px + env(safe-area-inset-bottom))",maxWidth:700,margin:"0 auto"}}><RoomPanel key={ar} houseId={house.id} room={ar} rd={house.rooms[ar]} onUpdate={upd=>onUpdate({...house,rooms:{...house.rooms,[ar]:upd}})}/></div>
     </div>
   );
 }
@@ -304,8 +386,72 @@ function HouseCard({house,onSelect,onDelete}){
   const p=pct(house),open=totalOpen(house),pc=pColor(p);
   return(
     <div className="hcard" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",overflow:"hidden"}} onClick={onSelect}>
-      <div style={{padding:"16px 16px 0"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}><div><div style={{fontSize:10,color:T.text3,fontFamily:"'DM Mono',monospace",marginBottom:3,letterSpacing:1.5,fontWeight:600}}>UNIT</div><div style={{fontSize:19,fontWeight:700,color:T.text}}>{house.name}</div></div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:24,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span><button onClick={e=>{e.stopPropagation();if(confirm(`Delete ${house.name}? This cannot be undone.`))onDelete();}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:20,minWidth:36,minHeight:44,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div></div><PBar p={p} color={pc}/>{open>0&&<div style={{marginTop:9,fontSize:12,color:T.danger,fontWeight:600}}>⚠ {open} open snag{open!==1?"s":""}</div>}</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",marginTop:12,background:T.cardAlt}}>{ROOMS.map((r,i)=>{const rm=house.rooms[r];const o=rOpen(rm);const c=SC[rm.installStage]||T.text3;return(<div key={r} style={{padding:"10px 11px",borderTop:`1px solid ${T.border}`,borderRight:i<2?`1px solid ${T.border}`:"none"}}><div style={{fontSize:9,color:T.text3,textTransform:"uppercase",letterSpacing:.5,marginBottom:4,fontWeight:600}}>{r}</div><div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}><span style={{width:8,height:8,borderRadius:"50%",background:c,boxShadow:`0 0 0 2px ${c}33`,flexShrink:0}}/><span style={{fontSize:9,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1.4,fontWeight:600}}>{rm.installStage}</span></div>{o>0&&<div style={{fontSize:9,color:T.danger,fontWeight:600}}>{o} snag{o!==1?"s":""}</div>}{rm.installStage==="Finished"&&<div style={{fontSize:9,color:T.success,fontWeight:600}}>✓{finishKeys(rm).length?` ${finishKeys(rm).length}📷`:""}</div>}</div>);})}</div>
+      <div style={{padding:"14px 14px 0"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}><div style={{minWidth:0}}><div style={{fontSize:10,color:T.text3,fontFamily:"'DM Mono',monospace",marginBottom:2,letterSpacing:1.5,fontWeight:600}}>UNIT</div><div style={{fontSize:18,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{house.name}</div></div><div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}><span style={{fontSize:22,fontWeight:800,color:pc,fontFamily:"'DM Mono',monospace"}}>{p}%</span><button onClick={e=>{e.stopPropagation();if(confirm(`Delete ${house.name}? This cannot be undone.`))onDelete();}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:20,minWidth:34,minHeight:40,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div></div><PBar p={p} color={pc}/>{open>0&&<div style={{marginTop:8,fontSize:12,color:T.danger,fontWeight:600}}>⚠ {open} open snag{open!==1?"s":""}</div>}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",marginTop:10,background:T.cardAlt}}>{ROOMS.map((r,i)=>{const rm=house.rooms[r];const o=rOpen(rm);const c=SC[rm.installStage]||T.text3;return(<div key={r} style={{padding:"9px 9px",borderTop:`1px solid ${T.border}`,borderRight:i<2?`1px solid ${T.border}`:"none",minWidth:0}}><div style={{fontSize:9,color:T.text3,textTransform:"uppercase",letterSpacing:.5,marginBottom:3,fontWeight:600}}>{r}</div><div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}><span style={{width:8,height:8,borderRadius:"50%",background:c,boxShadow:`0 0 0 2px ${c}33`,flexShrink:0}}/><span style={{fontSize:9,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1.3,fontWeight:600,overflow:"hidden"}}>{rm.installStage}</span></div>{o>0&&<div style={{fontSize:9,color:T.danger,fontWeight:600}}>{o} snag{o!==1?"s":""}</div>}{rm.installStage==="Finished"&&<div style={{fontSize:9,color:T.success,fontWeight:600}}>✓{finishKeys(rm).length?` ${finishKeys(rm).length}📷`:""}</div>}</div>);})}</div>
+    </div>
+  );
+}
+
+// ── Register View (Excess / Wrong Location / Short) ─────────────────────────────
+function RegisterView({type,houses,settings,onUpdateHouse,onBack}){
+  const R=REGS[type];const items=collectType(houses,type);
+  const sorted=sortHouses(houses);
+  const [adding,setAdding]=useState(false);
+  const [addHouse,setAddHouse]=useState("");const [addRoom,setAddRoom]=useState("Kitchen");
+  const updateNote=(houseId,room,snagId,note)=>{const h=houses.find(x=>x.id===houseId);if(!h)return;onUpdateHouse({...h,rooms:{...h.rooms,[room]:{...h.rooms[room],snags:h.rooms[room].snags.map(s=>s.id===snagId?{...s,reuseNote:note}:s)}}});};
+  const markDone=(houseId,room,snagId)=>{const h=houses.find(x=>x.id===houseId);if(!h)return;onUpdateHouse({...h,rooms:{...h.rooms,[room]:{...h.rooms[room],snags:h.rooms[room].snags.map(s=>s.id===snagId?{...s,resolved:true,resolvedAt:new Date().toISOString()}:s)}}});};
+  const submitNew=async fd=>{
+    const h=houses.find(x=>x.id===addHouse);if(!h){alert("Pick a house first.");return;}
+    const photoKeys=[];for(const p of (fd.photos||[])){if(p.key)photoKeys.push(p.key);else{const k=`ph:${uid()}`;await saveP(k,p.dataUrl);photoKeys.push(k);}}
+    const {photos,...rest}=fd;
+    const snag={...rest,type,location:addRoom,id:uid(),loggedAt:new Date().toISOString(),resolved:false,resolvedAt:null,photoKeys};
+    onUpdateHouse({...h,rooms:{...h.rooms,[addRoom]:{...h.rooms[addRoom],lastInspection:new Date().toISOString(),snags:[...h.rooms[addRoom].snags,snag]}}});
+    setAdding(false);
+  };
+  return(
+    <div style={{minHeight:"100vh",background:T.bg}}>
+      <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"12px 14px",position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 3px rgba(15,23,42,.04)",display:"flex",alignItems:"center",gap:10}}>
+        <Btn sm onClick={onBack}>←</Btn>
+        <h1 style={{margin:0,flex:1,fontSize:17,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{R.icon} {R.title}</h1>
+        <span style={{fontSize:13,color:R.color,fontWeight:700,fontFamily:"'DM Mono',monospace",flexShrink:0}}>{items.length}</span>
+      </div>
+      <div style={{padding:"12px 12px",paddingBottom:"calc(70px + env(safe-area-inset-bottom))",maxWidth:960,margin:"0 auto"}}>
+        <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap"}}>
+          <Btn sm v={adding?"ghost":"primary"} onClick={()=>setAdding(a=>!a)}>{adding?"✕ Cancel":"+ Log"}</Btn>
+          <Btn sm onClick={()=>exportRegExcel(houses,settings.project,type)}>📊 Excel</Btn>
+          <Btn sm onClick={()=>exportRegPDF(houses,settings.project,type,type==="WRONG_HOUSE")}>📄 PDF Report</Btn>
+        </div>
+        {adding&&(
+          <div style={{background:"#fff",border:`1px solid ${R.color}66`,borderRadius:12,padding:12,marginBottom:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div><L c="House / Plot"/><select value={addHouse} onChange={e=>setAddHouse(e.target.value)} style={{...II,background:"#fff"}}><option value="">— pick house —</option>{sorted.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></div>
+              <div><L c="Room"/><select value={addRoom} onChange={e=>setAddRoom(e.target.value)} style={{...II,background:"#fff"}}>{ROOMS.map(r=><option key={r}>{r}</option>)}</select></div>
+            </div>
+            {addHouse?<SnagForm hideType initial={{type,material:type==="EXCESS_MAT"?MATS[0]:"",matChosen:type==="EXCESS_MAT",description:"",correctHouse:"",quantity:"",unit:"sheets",photos:[]}} onSubmit={submitNew} onCancel={()=>setAdding(false)} submitLabel={`Log ${R.title.split(" ")[0]}`} title={`${R.icon} New ${R.title}`}/>:<div style={{fontSize:13,color:T.text3,fontStyle:"italic",padding:"4px 2px"}}>Pick a house above to continue…</div>}
+          </div>
+        )}
+        {items.length===0?(
+          <div style={{textAlign:"center",padding:"60px 0",color:T.text3,fontSize:14}}>Nothing open here. 🎉</div>
+        ):(
+          items.map(it=>{const mat=matOf(it.snag);const keys=snagKeys(it.snag);return(
+            <div key={it.snag.id} style={{background:"#fff",border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:5}}>
+                <span style={{fontSize:14,color:T.text,fontWeight:700}}>{it.house.name}</span>
+                <span style={{fontSize:12,color:T.text3}}>{it.snag.location||it.room}</span>
+                {mat&&<span style={{fontSize:12,color:T.text2}}>{mat}</span>}
+                {it.snag.quantity&&<span style={{fontSize:13,fontWeight:700,color:R.color,fontFamily:"'DM Mono',monospace"}}>{it.snag.quantity} {it.snag.unit||""}</span>}
+                {it.snag.correctHouse&&<span style={{fontSize:12,fontWeight:700,color:"#ec4899"}}>→ {it.snag.correctHouse}</span>}
+              </div>
+              {it.snag.description&&<div style={{fontSize:14,color:T.text,lineHeight:1.45,marginBottom:7}}>{it.snag.description}</div>}
+              {keys.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>{keys.map(k=><PhotoThumb key={k} photoKey={k} size={76}/>)}</div>}
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <input placeholder={R.note+"…"} value={it.snag.reuseNote||""} onChange={e=>updateNote(it.house.id,it.room,it.snag.id,e.target.value)} style={{flex:1,minWidth:0,background:T.cardAlt,border:`1px solid ${T.borderStrong}`,borderRadius:7,padding:"7px 10px",minHeight:38,outline:"none",color:T.text}}/>
+                <button onClick={()=>{if(confirm("Mark as sorted / closed?"))markDone(it.house.id,it.room,it.snag.id);}} title="Mark sorted" style={{background:T.success+"15",border:`1px solid ${T.success}66`,color:T.success,borderRadius:7,padding:"7px 14px",cursor:"pointer",fontSize:15,fontWeight:700,minHeight:38,flexShrink:0}}>✓</button>
+              </div>
+            </div>
+          );})
+        )}
+      </div>
     </div>
   );
 }
@@ -332,16 +478,16 @@ function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
       }
       LS.set("tk-sb",JSON.stringify({url:url.trim(),key:key.trim()}));
       alert("Cloud sync is ON. Reloading…");location.reload();
-    }catch(e){alert("Connection failed: "+(e.message||e)+"\n\nMake sure you ran the setup SQL (tables + access) in Supabase.");}
+    }catch(e){alert("Connection failed: "+(e.message||e)+"\n\nUse the LEGACY anon key (eyJ…) from Supabase → Settings → API Keys → 'Legacy anon, service_role API keys' tab.");}
   };
   const disconnectCloud=()=>{if(!confirm("Turn off cloud sync on this device? Your data stays, but stops syncing."))return;LS.del("tk-sb");location.reload();};
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"92vh",overflow:"auto",padding:24,paddingBottom:34,boxShadow:"0 -8px 32px rgba(15,23,42,.15)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{margin:0,fontSize:19,color:T.text,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>⚙ Settings</h2><button onClick={onClose} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:24,minWidth:36,minHeight:36}}>×</button></div>
-        <L c="Project / Development Name"/><input value={proj} onChange={e=>setProj(e.target.value)} placeholder="e.g. Athenry" style={{...II,marginBottom:14}}/>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"92vh",overflow:"auto",padding:22,paddingBottom:"calc(30px + env(safe-area-inset-bottom))",boxShadow:"0 -8px 32px rgba(15,23,42,.15)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h2 style={{margin:0,fontSize:19,color:T.text,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>⚙ Settings</h2><button onClick={onClose} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:24,minWidth:40,minHeight:40}}>×</button></div>
+        <L c="Project / Development Name"/><input value={proj} onChange={e=>setProj(e.target.value)} placeholder="e.g. Athenry" style={{...II,marginBottom:12}}/>
         <Btn v="primary" sx={{width:"100%",justifyContent:"center",display:"flex"}} onClick={()=>{onSaveSettings({...settings,project:proj});onClose();}}>Save</Btn>
-        <div style={{height:1,background:T.border,margin:"22px 0"}}/>
+        <div style={{height:1,background:T.border,margin:"20px 0"}}/>
         <L c="Cloud Sync (phone ↔ PC)"/>
         {cloudReady?(
           <div>
@@ -350,133 +496,54 @@ function SettingsModal({settings,houses,onSaveSettings,onImport,onClose}){
           </div>
         ):(
           <div>
-            <div style={{fontSize:12,color:T.text2,lineHeight:1.5,marginBottom:10,background:T.cardAlt,padding:12,borderRadius:9,border:`1px solid ${T.border}`}}>Enter your Supabase <b>Project URL</b> and <b>anon public key</b> (Settings → API in Supabase). Do this once on each device, using the <b>same</b> values.</div>
-            <L c="Project URL"/><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" style={{...II,marginBottom:10,fontFamily:"'DM Mono',monospace",fontSize:12}}/>
-            <L c="anon public key"/><textarea value={key} onChange={e=>setKey(e.target.value)} placeholder="eyJhbGciOiJ..." rows={3} style={{...II,marginBottom:10,fontFamily:"'DM Mono',monospace",fontSize:11,resize:"vertical"}}/>
+            <div style={{fontSize:12,color:T.text2,lineHeight:1.5,marginBottom:10,background:T.cardAlt,padding:12,borderRadius:9,border:`1px solid ${T.border}`}}>Enter your Supabase <b>Project URL</b> and the <b>legacy anon key</b> (the long <b>eyJ…</b> one, from Settings → API Keys → "Legacy anon, service_role API keys" tab). Same values on every device.</div>
+            <L c="Project URL"/><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" style={{...II,marginBottom:10,fontFamily:"'DM Mono',monospace"}}/>
+            <L c="anon public key (eyJ…)"/><textarea value={key} onChange={e=>setKey(e.target.value)} placeholder="eyJhbGciOiJ..." rows={3} style={{...II,marginBottom:10,fontFamily:"'DM Mono',monospace",resize:"vertical"}}/>
             <Btn v="primary" sx={{width:"100%",justifyContent:"center",display:"flex"}} onClick={connectCloud}>☁️ Connect Cloud Sync</Btn>
           </div>
         )}
-        <div style={{height:1,background:T.border,margin:"22px 0"}}/>
+        <div style={{height:1,background:T.border,margin:"20px 0"}}/>
         <L c="Manual Backup (always available)"/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><Btn v="success" onClick={()=>exportBackup(houses,settings)}>⬇ Export Backup</Btn><Btn v="danger" onClick={()=>fileRef.current?.click()}>⬆ Import Backup</Btn></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><Btn v="success" onClick={()=>exportBackup(houses,settings)}>⬇ Export</Btn><Btn v="danger" onClick={()=>fileRef.current?.click()}>⬆ Import</Btn></div>
         <input ref={fileRef} type="file" accept="application/json,.json" style={{display:"none"}} onChange={handleImport}/>
-        <div style={{fontSize:11,color:T.text3,marginTop:4}}>A JSON file with all houses, snags, notes & photos. A good safety net even with cloud sync on.</div>
+        <div style={{fontSize:11,color:T.text3,marginTop:4}}>A JSON file with all houses, snags, notes & photos.</div>
+        <div style={{fontSize:11,color:T.text3,marginTop:16,textAlign:"center",fontFamily:"'DM Mono',monospace"}}>App version {APP_VER}</div>
       </div>
     </div>
   );
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
-// ── Excess Material Exports ────────────────────────────────────────────────────
-const collectExcess=houses=>{const items=[];houses.forEach(h=>ROOMS.forEach(room=>h.rooms[room].snags.forEach(s=>{if(s.type==="EXCESS_MAT"&&!s.resolved)items.push({house:h,room,snag:s});})));return items;};
-const exportExcessExcel=(houses,project)=>{
-  const items=collectExcess(houses);if(items.length===0){alert("No excess material to export.");return;}
-  const rows=[["Project","Plot","Room","Material","Quantity","Unit","Description","Reuse At","Logged"]];
-  items.forEach(it=>rows.push([project||"Athenry",it.house.name,it.room,it.snag.material||"",it.snag.quantity||"",it.snag.unit||"",it.snag.description||"",it.snag.reuseNote||"",fmtShort(it.snag.loggedAt)]));
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:12},{wch:14},{wch:12},{wch:24},{wch:10},{wch:10},{wch:36},{wch:36},{wch:14}];
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Excess Material");
-  XLSX.writeFile(wb,`Excess_Material_${new Date().toISOString().slice(0,10)}.xlsx`);
-};
-const exportExcessPDF=(houses,project)=>{
-  const items=collectExcess(houses);if(items.length===0){alert("No excess material to export.");return;}
-  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const pageW=210,pageH=297,M=15;let y=M;
-  doc.setFontSize(20).setFont(undefined,'bold');doc.text('Excess Material Report',M,y);y+=8;
-  doc.setFontSize(11).setFont(undefined,'normal').setTextColor(100,100,100);doc.text(`Project: ${project||"Athenry"}`,M,y);y+=5;doc.text(`Generated: ${new Date().toLocaleString('en-IE')}`,M,y);y+=5;
-  doc.setFontSize(10).setTextColor(60);doc.text(`Total items: ${items.length}`,M,y);y+=10;
-  const space=n=>{if(y+n>pageH-M){doc.addPage();y=M;}};
-  for(const it of items){
-    space(32);
-    doc.setFillColor(255,237,213);doc.rect(M,y-5,pageW-2*M,9,'F');
-    doc.setFontSize(12).setFont(undefined,'bold').setTextColor(154,52,18);doc.text(`${it.house.name}  ·  ${it.room}`,M+2,y+1);
-    doc.setFontSize(11).setFont(undefined,'bold').setTextColor(247,115,22);doc.text(`${it.snag.quantity||"?"} ${it.snag.unit||""}`,pageW-M-2,y+1,{align:'right'});
-    y+=10;
-    doc.setFontSize(10).setFont(undefined,'normal').setTextColor(40);
-    if(it.snag.material){doc.text(`Material: ${it.snag.material}`,M+2,y);y+=5;}
-    if(it.snag.description){doc.splitTextToSize(`Description: ${it.snag.description}`,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});}
-    if(it.snag.reuseNote){doc.setFont(undefined,'bold').setTextColor(22,163,74);doc.splitTextToSize(`Reuse at: ${it.snag.reuseNote}`,pageW-2*M-5).forEach(w=>{if(y>pageH-M){doc.addPage();y=M;}doc.text(w,M+2,y);y+=4.5;});doc.setFont(undefined,'normal').setTextColor(40);}else{doc.setTextColor(150).setFont(undefined,'italic');doc.text("Reuse at: (not yet assigned)",M+2,y);y+=4.5;doc.setFont(undefined,'normal').setTextColor(40);}
-    y+=2;doc.setDrawColor(230,230,230);doc.line(M,y,pageW-M,y);y+=5;
-  }
-  const n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8).setTextColor(150);doc.text(`Page ${i} of ${n}`,pageW/2,pageH-7,{align:'center'});}
-  doc.save(`Excess_Material_${new Date().toISOString().slice(0,10)}.pdf`);
-};
-
-// ── Excess Material View (full page) ───────────────────────────────────────────
-function ExcessMaterialView({houses,settings,onUpdateHouse,onBack}){
-  const items=collectExcess(houses);
-  const updateNote=(houseId,room,snagId,note)=>{const h=houses.find(x=>x.id===houseId);if(!h)return;onUpdateHouse({...h,rooms:{...h.rooms,[room]:{...h.rooms[room],snags:h.rooms[room].snags.map(s=>s.id===snagId?{...s,reuseNote:note}:s)}}});};
-  const markUsed=(houseId,room,snagId)=>{const h=houses.find(x=>x.id===houseId);if(!h)return;onUpdateHouse({...h,rooms:{...h.rooms,[room]:{...h.rooms[room],snags:h.rooms[room].snags.map(s=>s.id===snagId?{...s,resolved:true,resolvedAt:new Date().toISOString()}:s)}}});};
-  return(
-    <div style={{minHeight:"100vh",background:T.bg}}>
-      <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"14px 15px",position:"sticky",top:0,zIndex:10,boxShadow:"0 1px 3px rgba(15,23,42,.04)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <Btn sm onClick={onBack}>← Back</Btn>
-        <h1 style={{margin:0,flex:1,fontSize:18,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400}}>📦 Excess Material</h1>
-        <span style={{fontSize:13,color:"#f97316",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{items.length} item{items.length!==1?"s":""}</span>
-      </div>
-      <div style={{padding:"15px 14px",paddingBottom:"calc(70px + env(safe-area-inset-bottom))",maxWidth:960,margin:"0 auto"}}>
-        <div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}>
-          <Btn sm onClick={()=>exportExcessExcel(houses,settings.project)}>📊 Export Excel</Btn>
-          <Btn sm v="primary" onClick={()=>exportExcessPDF(houses,settings.project)}>📄 Export PDF</Btn>
-        </div>
-        {items.length===0?(
-          <div style={{textAlign:"center",padding:"60px 0",color:T.text3,fontSize:14}}>No open excess material recorded.</div>
-        ):(
-          <div>
-            {items.map(it=>(
-              <div key={it.snag.id} style={{background:T.cardAlt,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",marginBottom:6}}>
-                <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:6}}>
-                  <span style={{fontSize:12,color:T.text,fontWeight:700,whiteSpace:"nowrap"}}>{it.house.name}</span>
-                  {it.snag.material&&<span style={{fontSize:12,color:T.text2,whiteSpace:"nowrap"}}>{it.snag.material}</span>}
-                  <span style={{fontSize:12,fontWeight:700,color:"#f97316",whiteSpace:"nowrap",fontFamily:"'DM Mono',monospace"}}>{it.snag.quantity||"?"} {it.snag.unit||""}</span>
-                </div>
-                {it.snag.description&&<div style={{fontSize:12,color:T.text,lineHeight:1.45,marginBottom:7}}>{it.snag.description}</div>}
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <input placeholder="reuse at…" value={it.snag.reuseNote||""} title={it.snag.reuseNote||""} onChange={e=>updateNote(it.house.id,it.room,it.snag.id,e.target.value)} style={{flex:1,minWidth:0,background:"#fff",border:`1px solid ${T.borderStrong}`,borderRadius:6,padding:"6px 10px",fontSize:13,minHeight:36,outline:"none",color:T.text}}/>
-                  <button onClick={()=>{if(confirm("Mark this excess material as used?"))markUsed(it.house.id,it.room,it.snag.id);}} title="Mark used" style={{background:T.success+"15",border:`1px solid ${T.success}66`,color:T.success,borderRadius:6,padding:"6px 13px",cursor:"pointer",fontSize:15,fontWeight:700,minHeight:36,flexShrink:0}}>✓</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr,onUpdate,onShowExcess,excessCount}){
+function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr,onNav}){
   const [nm,setNm]=useState("");const [filter,setFilter]=useState("all");
   const sorted=sortHouses(houses);
   const filtered=sorted.filter(h=>filter==="snags"?totalOpen(h)>0:filter==="complete"?pct(h)===100:filter==="active"?pct(h)>0&&pct(h)<100:true);
-  const isAll=filter==="all";
-  const compHouses=isAll?filtered.filter(h=>pct(h)===100):[];
-  const mainHouses=isAll&&compHouses.length>0?filtered.filter(h=>pct(h)<100):filtered;
-  const showSplit=isAll&&compHouses.length>0;
   const add=()=>{if(nm.trim()){onAdd(nm.trim());setNm("");}};
   const tOpen=houses.reduce((n,h)=>n+totalOpen(h),0);const tDone=houses.filter(h=>pct(h)===100).length;
+  const counts={};Object.keys(REGS).forEach(t=>counts[t]=collectType(houses,t).length);
   return(
     <div style={{minHeight:"100vh",background:T.bg}}>
-      <div style={{background:`linear-gradient(180deg, ${T.card} 0%, ${T.cardAlt} 100%)`,borderBottom:`1px solid ${T.border}`,padding:"17px 16px 14px",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(15,23,42,.04)"}}>
+      <div style={{background:`linear-gradient(180deg, ${T.card} 0%, ${T.cardAlt} 100%)`,borderBottom:`1px solid ${T.border}`,padding:"14px 14px 12px",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(15,23,42,.04)"}}>
         <div style={{maxWidth:960,margin:"0 auto"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:14}}>
-            <div><div style={{fontSize:11,color:T.primary,textTransform:"uppercase",letterSpacing:2,marginBottom:4,fontFamily:"'DM Mono',monospace",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>{settings.project||"PROJECT"}<span style={{color:syncErr?T.danger:cloudReady?T.success:T.text3,fontSize:10}}>{syncErr?"⚠ sync error":cloudReady?"☁ synced":"📱 local"}</span></div><h1 style={{margin:0,fontSize:24,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,lineHeight:1.1}}>Kitchen Install Tracker</h1></div>
-            <div style={{display:"flex",gap:18,alignItems:"center"}}>{[["Houses",houses.length,T.primary],["Done",tDone,T.success],["Snags",tOpen,tOpen>0?T.danger:T.success]].map(([l,v,c])=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div><div style={{fontSize:10,color:T.text2,textTransform:"uppercase",marginTop:3,fontWeight:600,letterSpacing:.5}}>{l}</div></div>))}<button onClick={onSettings} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:22,minHeight:44,minWidth:36,padding:4}}>⚙</button></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:11}}>
+            <div style={{minWidth:0}}><div style={{fontSize:11,color:T.primary,textTransform:"uppercase",letterSpacing:2,marginBottom:3,fontFamily:"'DM Mono',monospace",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>{settings.project||"PROJECT"}<span style={{color:syncErr?T.danger:cloudReady?T.success:T.text3,fontSize:10}}>{syncErr?"⚠ sync error":cloudReady?"☁ synced":"📱 local"}</span></div><h1 style={{margin:0,fontSize:21,fontFamily:"'DM Serif Display',serif",color:T.text,fontWeight:400,lineHeight:1.1}}>Kitchen Install Tracker</h1></div>
+            <div style={{display:"flex",gap:14,alignItems:"center"}}>{[["Houses",houses.length,T.primary],["Done",tDone,T.success],["Snags",tOpen,tOpen>0?T.danger:T.success]].map(([l,v,c])=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div><div style={{fontSize:9,color:T.text2,textTransform:"uppercase",marginTop:2,fontWeight:600,letterSpacing:.5}}>{l}</div></div>))}<button onClick={onSettings} style={{background:"none",border:"none",color:T.text2,cursor:"pointer",fontSize:21,minHeight:44,minWidth:36,padding:4}}>⚙</button></div>
           </div>
-          <div style={{display:"flex",gap:8}}><input value={nm} onChange={e=>setNm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add house / plot number…" style={{flex:1,background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:10,padding:"11px 14px",fontSize:14,outline:"none",minHeight:46}}/><Btn v="primary" onClick={add}>+ Add</Btn></div>
+          <div style={{display:"flex",gap:8}}><input value={nm} onChange={e=>setNm(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add house / plot…" style={{flex:1,minWidth:0,background:T.card,border:`1px solid ${T.borderStrong}`,color:T.text,borderRadius:10,padding:"10px 13px",outline:"none",minHeight:46}}/><Btn v="primary" onClick={add}>+ Add</Btn></div>
         </div>
       </div>
-      <div style={{maxWidth:960,margin:"0 auto",padding:"14px 14px 50px"}}>
-        <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>{[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 14px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500}}>{l}</button>))}</div>
-        <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status Excel</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn><Btn sm onClick={onShowExcess} sx={{background:excessCount>0?"#fff7ed":T.card,borderColor:excessCount>0?"#fb923c":T.borderStrong,color:"#9a3412"}}>📦 Excess Material{excessCount>0?` (${excessCount})`:""}</Btn></div>
-        {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<>
-          {mainHouses.length>0&&<>
-            {showSplit&&(<div style={{display:"flex",alignItems:"center",gap:8,marginTop:4,marginBottom:12,fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700}}><span>In Progress</span><span style={{background:T.primary+"18",color:T.primary,padding:"2px 9px",borderRadius:99,fontSize:11,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{mainHouses.length}</span><div style={{flex:1,height:1,background:T.border,marginLeft:4}}/></div>)}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>{mainHouses.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>
-          </>}
-          {compHouses.length>0&&<>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:mainHouses.length>0?26:4,marginBottom:12,fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700}}><span>✓ Completed</span><span style={{background:T.success+"18",color:T.success,padding:"2px 9px",borderRadius:99,fontSize:11,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{compHouses.length}</span><div style={{flex:1,height:1,background:T.border,marginLeft:4}}/></div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14}}>{compHouses.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>
-          </>}
-        </>)}
+      <div style={{maxWidth:960,margin:"0 auto",padding:"12px 12px 50px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:7,marginBottom:10}}>
+          {Object.entries(REGS).map(([t,R])=>(
+            <button key={t} onClick={()=>onNav(t)} style={{background:counts[t]>0?R.bg:T.card,border:`1px solid ${counts[t]>0?R.color+"88":T.border}`,borderRadius:10,padding:"9px 6px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,minHeight:56}}>
+              <span style={{fontSize:16}}>{R.icon}</span>
+              <span style={{fontSize:10,fontWeight:700,color:counts[t]>0?R.color:T.text2,lineHeight:1.2,textAlign:"center"}}>{R.title.split(" ")[0]}{counts[t]>0?` (${counts[t]})`:""}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>{[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 13px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500}}>{l}</button>))}</div>
+        <div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn></div>
+        {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>{filtered.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>)}
       </div>
     </div>
   );
@@ -488,22 +555,19 @@ function App(){
   const [settings,setSettings]=useState(()=>loadS());
   const [selId,setSelId]=useState(null);
   const [showSet,setShowSet]=useState(false);
-  const [showExcess,setShowExcess]=useState(false);
+  const [reg,setReg]=useState(null); // 'EXCESS_MAT' | 'WRONG_HOUSE' | 'MISSING' | null
   const [syncErr,setSyncErr]=useState(false);
-  const pending=useRef({});      // id -> latest house object awaiting cloud write
-  const timers=useRef({});       // id -> debounce timer
-  const lastWriteAt=useRef(0);   // recent local write => block reloads from clobbering it
+  const pending=useRef({});const timers=useRef({});const lastWriteAt=useRef(0);
 
   const flushHouse=id=>{const u=pending.current[id];if(!u||!(cloudReady&&sb))return;delete pending.current[id];lastWriteAt.current=Date.now();sb.from('houses').upsert({id:u.id,data:u}).then(r=>{lastWriteAt.current=Date.now();if(r&&r.error){setSyncErr(true);console.error("write:",r.error);}else setSyncErr(false);},e=>{setSyncErr(true);console.error(e);});};
   const flushAll=()=>{Object.keys(pending.current).forEach(flushHouse);};
   const pushHouse=u=>{if(!(cloudReady&&sb))return;pending.current[u.id]=u;lastWriteAt.current=Date.now();clearTimeout(timers.current[u.id]);timers.current[u.id]=setTimeout(()=>flushHouse(u.id),600);};
 
-  // Cloud: initial fetch + realtime + refetch on focus (guarded so it never overwrites fresh local edits)
   useEffect(()=>{
     if(!cloudReady||!sb)return;let active=true;
     const reload=async()=>{
-      if(Date.now()-lastWriteAt.current<2500)return;        // just edited locally — keep ours
-      if(Object.keys(pending.current).length)return;        // writes still queued
+      if(Date.now()-lastWriteAt.current<2500)return;
+      if(Object.keys(pending.current).length)return;
       try{const {data,error}=await sb.from('houses').select('data');if(error){setSyncErr(true);return;}if(active&&data){const hs=data.map(r=>r.data);setHouses(hs);LS.set("tk4-h",JSON.stringify(hs));setSyncErr(false);}}catch(e){console.error("houses fetch:",e);}
       try{const {data}=await sb.from('meta').select('value').eq('key','settings').maybeSingle();if(active&&data&&data.value){setSettings(data.value);LS.set("tk4-s",JSON.stringify(data.value));}}catch(e){}
     };
@@ -526,7 +590,9 @@ function App(){
   const handleImport=useCallback(file=>importBackup(file,setHouses,setSettings),[]);
   return(
     <>
-      {showExcess?<ExcessMaterialView houses={houses} settings={settings} onUpdateHouse={updH} onBack={()=>setShowExcess(false)}/>:sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>:<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} onUpdate={updH} settings={settings} onSettings={()=>setShowSet(true)} syncErr={syncErr} onShowExcess={()=>setShowExcess(true)} excessCount={houses.reduce((n,h)=>n+ROOMS.reduce((m,r)=>m+h.rooms[r].snags.filter(s=>s.type==="EXCESS_MAT"&&!s.resolved).length,0),0)}/>}
+      {reg?<RegisterView type={reg} houses={houses} settings={settings} onUpdateHouse={updH} onBack={()=>setReg(null)}/>
+      :sel?<HouseDetail house={sel} onUpdate={updH} onBack={()=>setSelId(null)}/>
+      :<Dashboard houses={houses} onSelect={h=>setSelId(h.id)} onAdd={addH} onDelete={delH} settings={settings} onSettings={()=>setShowSet(true)} syncErr={syncErr} onNav={setReg}/>}
       {showSet&&<SettingsModal settings={settings} houses={houses} onSaveSettings={saveSettings} onImport={handleImport} onClose={()=>setShowSet(false)}/>}
     </>
   );
