@@ -39,7 +39,7 @@ details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-
 </script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useCallback,useRef}=React;
-const APP_VER="2.0";
+const APP_VER="2.1";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STAGES=["Not Started","Site Ready","Delivered","Installed","Installed with Snags","Finished"];
@@ -542,7 +542,7 @@ function Dashboard({houses,onSelect,onAdd,onDelete,settings,onSettings,syncErr,o
           ))}
         </div>
         <div style={{display:"flex",gap:7,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>{[["all","All"],["active","Active"],["snags","Has Snags"],["complete","Complete"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?T.card:"transparent",border:`1px solid ${filter===v?T.borderStrong:T.border}`,color:filter===v?T.text:T.text2,borderRadius:9,padding:"8px 13px",fontSize:13,cursor:"pointer",minHeight:38,fontWeight:filter===v?600:500}}>{l}</button>))}</div>
-        <div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn></div>
+        <div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Btn sm onClick={()=>exportStatus(sorted)}>📊 Status</Btn><Btn sm v="danger" onClick={()=>exportSnags(sorted,settings.project)}>⚠ Snags Excel</Btn><Btn sm v="primary" onClick={()=>exportPDF(sorted,settings.project)}>📄 Snags PDF</Btn><Btn sm onClick={()=>window.open('siteplan.pdf','_blank')}>🗺 Site Plan</Btn></div>
         {filtered.length===0?(<div style={{textAlign:"center",padding:"70px 0",color:T.text3,fontSize:15}}>{houses.length===0?"Tap '+ Add' above to add your first house":"No houses match this filter"}</div>):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>{filtered.map(h=><HouseCard key={h.id} house={h} onSelect={()=>onSelect(h)} onDelete={()=>onDelete(h.id)}/>)}</div>)}
       </div>
     </div>
